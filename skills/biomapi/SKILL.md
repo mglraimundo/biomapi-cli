@@ -121,6 +121,8 @@ python3 scripts/biomapi.py usage
 python3 scripts/biomapi.py status
 ```
 
+Returns lightweight API status and deployment metadata, including `db_id`.
+
 
 ## Output Behavior
 

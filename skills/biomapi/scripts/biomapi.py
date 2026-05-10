@@ -455,7 +455,7 @@ def cmd_usage() -> None:
 
 
 def cmd_status() -> None:
-    """Check API health status."""
+    """Check lightweight API status."""
     result = _request("GET", f"{BASE_URL}/api/v1/status")
     print(json.dumps(result))
     if result.get("error"):
@@ -497,7 +497,7 @@ Commands:
 
   usage        Show current rate-limit usage for your key or public IP.
 
-  status       Health check — returns API version and available models.
+  status       Lightweight API status — returns deployment metadata and db_id.
 
 Options:
   --no-pin          Skip BiomPIN generation on process (default: generate)

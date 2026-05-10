@@ -296,13 +296,13 @@ python biomapi.py usage
 
 ---
 
-### `status` — Check API health
+### `status` — Check API status
 
 ```
 biomapi.py status
 ```
 
-Quick connectivity and health check:
+Lightweight API status and deployment metadata:
 
 ```bash
 python biomapi.py status
@@ -310,8 +310,10 @@ python biomapi.py status
 
 **Stdout:**
 ```json
-{"status": "ok", "version": "0.9.7", "models": ["gemini-3-flash-preview"]}
+{"status": "ok", "db_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "gemini_llm": "gemini-3-flash-preview", "environment": "production", "app_version": "0.9.8.1", "schema_version": "1.0.0"}
 ```
+
+For active Gemini/database health checks, call `GET /api/v1/health`.
 
 ---
 
