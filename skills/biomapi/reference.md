@@ -69,7 +69,7 @@ These are NOT validation ranges — they're typical adult values for clinical co
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Patient name acronym (e.g., "JDD" for John Douglas Doe) |
-| `patient_id` | string | Patient ID or medical record number |
+| `id` | string | Patient ID or medical record number |
 | `date_of_birth` | date | ISO format (YYYY-MM-DD) |
 | `gender` | enum | Male, Female |
 
@@ -103,16 +103,20 @@ Posterior keratometry is measured per eye, same structure as anterior K values b
 
 | Field | Description |
 |-------|-------------|
-| `extraction_method` | `BiomAI` (LLM extraction) or `BiomDIRECT` (direct/edited) |
-| `extraction_timestamp` | ISO timestamp of when extraction occurred |
-| `filename` | Original filename processed |
-| `llm` | Model used for extraction (BiomAI only) |
-| `llm_api_metrics` | Token usage stats (BiomAI only) |
-| `llm_performance` | Response time and retry info (BiomAI only) |
+| `schema_version` | Biometry schema version |
+| `app_version` | BiomAPI server version |
+| `extraction.method` | `BiomAI` (LLM extraction) or `BiomDIRECT` (direct/edited) |
+| `extraction.timestamp` | ISO timestamp of when extraction occurred |
+| `extraction.llm` | Model used for extraction (BiomAI only) |
+| `extraction.llm_api_metrics` | Token usage stats (BiomAI only) |
+| `extraction.llm_performance` | Response time and retry info (BiomAI only) |
+| `extraction.input_schema_version` | Input schema version on JSON round-trips or direct/manual data |
+| `extraction.source_app` | Client-declared source application for BiomDIRECT data |
 
 ### BiomPIN
 
 | Field | Description |
 |-------|-------------|
 | `pin` | Sharing code in format `word-word-123456` |
-| `expires_at_timestamp` | ISO timestamp when the PIN expires (default: 31 days / 744 hours) |
+| `expires_at` | ISO timestamp when the PIN expires (default: 31 days / 744 hours) |
+| `db_id` | BiomPIN database instance identifier |

@@ -27,7 +27,7 @@ Stdout (csv):
 
 Environment:
     BIOMAPI_KEY      - Optional API key for higher rate limits
-    GEMINI_API_KEY   - Optional: your own Gemini key (BYOK, bypasses process rate limits)
+    GEMINI_API_KEY   - Optional: your own Gemini key (BYOK, uses biomai_byok limits)
 
 Config file (~/.config/biomapi/config):
     Simple KEY=VALUE format. Keys: BIOMAPI_KEY, GEMINI_API_KEY, BIOMAPI_URL
@@ -502,12 +502,12 @@ Commands:
 Options:
   --no-pin          Skip BiomPIN generation on process (default: generate)
   --key <key>       Override BIOMAPI_KEY (higher daily limits)
-  --gemini-key <k>  Override GEMINI_API_KEY (BYOK — unlimited processing)
+  --gemini-key <k>  Override GEMINI_API_KEY (BYOK — separate biomai_byok bucket)
   -h, --help        Show this help message
 
 Environment variables:
   BIOMAPI_KEY      BiomAPI key for higher rate limits on all endpoints
-  GEMINI_API_KEY   Your own Gemini API key (BYOK — bypasses process limits)
+  GEMINI_API_KEY   Your own Gemini API key (BYOK — separate biomai_byok bucket)
   BIOMAPI_URL      API base URL (default: https://biomapi.com)
 
 Config file (~/.config/biomapi/config):
@@ -518,7 +518,7 @@ Config file (~/.config/biomapi/config):
 Access tiers:
   No key             30 process / 1000 retrieve per day (per IP)
   BIOMAPI_KEY        Custom quota per user
-  GEMINI_API_KEY     Unlimited process (uses your Gemini quota)
+  GEMINI_API_KEY     biomai_byok bucket (uses your Gemini quota)
 
 Examples:
   python biomapi.py configure                     # interactive setup

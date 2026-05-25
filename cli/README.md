@@ -62,8 +62,8 @@ python biomapi.py configure --clear             # remove config file entirely
 |---|---|---|---|
 | — | — | 30/day per IP | 1000/day per IP |
 | ✓ | — | Custom quota (per user) | Custom quota (per user) |
-| — | ✓ | Unlimited (your Gemini quota) | 1000/day per IP |
-| ✓ | ✓ | Unlimited (your Gemini quota) | Custom quota (per user) |
+| — | ✓ | `biomai_byok` bucket (your Gemini quota) | 1000/day per IP |
+| ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
 
 ### Alternative: environment variables
 
@@ -152,7 +152,7 @@ BIOMAPI_KEY=biom_abc123 python biomapi.py process scan.pdf
 # Or via CLI flag
 python biomapi.py process scan.pdf --key biom_abc123
 
-# With your own Gemini key (BYOK — unlimited processing, uses your Gemini quota)
+# With your own Gemini key (BYOK — separate biomai_byok bucket, uses your Gemini quota)
 GEMINI_API_KEY=AIza_xxx python biomapi.py process scan.pdf
 ```
 

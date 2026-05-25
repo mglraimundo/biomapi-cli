@@ -37,7 +37,7 @@ If the relative path doesn't resolve, try `${CLAUDE_SKILL_DIR}/scripts/biomapi.p
 |----------|----------|---------|-------------|
 | `BIOMAPI_URL` | No | `https://biomapi.com` | API base URL |
 | `BIOMAPI_KEY` | No | *(none)* | API key for higher rate limits |
-| `GEMINI_API_KEY` | No | *(none)* | Your own Gemini API key (BYOK — bypasses process rate limits entirely) |
+| `GEMINI_API_KEY` | No | *(none)* | Your own Gemini API key (BYOK — uses the separate `biomai_byok` bucket) |
 
 Public access (no key) is rate-limited to 30 extractions/day per IP.
 
@@ -47,15 +47,15 @@ Public access (no key) is rate-limited to 30 extractions/day per IP.
 |---|---|---|---|
 | — | — | 30/day per IP | 1000/day per IP |
 | ✓ | — | Custom quota (per user) | Custom quota (per user) |
-| — | ✓ | Unlimited (your Gemini quota) | 1000/day per IP |
-| ✓ | ✓ | Unlimited (your Gemini quota) | Custom quota (per user) |
+| — | ✓ | `biomai_byok` bucket (your Gemini quota) | 1000/day per IP |
+| ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
 
 ### Helping Users Configure Keys
 
 If a user reports a 429 rate limit error or asks how to get higher limits, help them set up keys:
 
 1. **BIOMAPI_KEY** — for higher daily limits: obtained from the BiomAPI operator.
-2. **GEMINI_API_KEY** — for unlimited processing: the user's own Gemini API key from [aistudio.google.com](https://aistudio.google.com).
+2. **GEMINI_API_KEY** — for BYOK processing in the separate `biomai_byok` bucket using the user's own Gemini API key from [aistudio.google.com](https://aistudio.google.com).
 
 Use the `configure` command to save keys to the config file (works on Windows, macOS, Linux):
 
@@ -135,7 +135,7 @@ The script always outputs a **compact summary** JSON (not the full API response)
 ```json
 {
   "patient_id": "12345",
-  "patient_name": "J. DOE",
+  "patient_name": "JD",
   "device": "IOLMaster 700",
   "biompin": "lunar-rocket-731904",
   "saved_json": "/abs/path/to/biomapi-12345-iolmaster700.json"
@@ -153,15 +153,15 @@ The **full raw API response** (including all metadata, LLM metrics, timings) is 
 **Default output** — show the compact info block only. Do NOT read `saved_json` or create any artifact.
 
 ```
-Patient: J. DOE (ID: 12345)
+Patient: JD (ID: 12345)
 
 BiomPIN: lunar-rocket-731904
 
 BiomAPI: https://biomapi.com/pin/lunar-rocket-731904
 
-ESCRS IOL Calculator: https://appiolcalculator-ts.azurewebsites.net/?biompin=lunar-rocket-731904
+ESCRS IOL Calculator: <configured calculator URL>?biompin=lunar-rocket-731904
 
-Saved: /abs/path/to/biomapi-j-doe-iolmaster700.json
+Saved: /abs/path/to/biomapi-jd-iolmaster700.json
 ```
 
 Each line MUST be separated by a blank line for readability. Do not collapse them into a single block.
