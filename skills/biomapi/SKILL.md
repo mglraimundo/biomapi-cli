@@ -39,13 +39,13 @@ If the relative path doesn't resolve, try `${CLAUDE_SKILL_DIR}/scripts/biomapi.p
 | `BIOMAPI_KEY` | No | *(none)* | API key for higher rate limits |
 | `GEMINI_API_KEY` | No | *(none)* | Your own Gemini API key (BYOK — uses the separate `biomai_byok` bucket) |
 
-Public access (no key) is rate-limited to 30 extractions/day per IP.
+Public access (no key) is rate-limited to 15 extractions/day per IP.
 
 **Access tiers:**
 
 | `BIOMAPI_KEY` | `GEMINI_API_KEY` | `process` limit | `retrieve` limit |
 |---|---|---|---|
-| — | — | 30/day per IP | 1000/day per IP |
+| — | — | 15/day per IP | 1000/day per IP |
 | ✓ | — | Custom quota (per user) | Custom quota (per user) |
 | — | ✓ | `biomai_byok` bucket (your Gemini quota) | 1000/day per IP |
 | ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
@@ -224,7 +224,7 @@ When the user asks for an **ESCRS IOL calculation** (or similar phrasing like "c
 ## Error Handling
 
 The script outputs JSON with `"error": true` on failure. Keep error messages brief:
-- **429**: Rate limited (30/day public). Suggest setting `BIOMAPI_KEY` or `GEMINI_API_KEY` for higher limits.
+- **429**: Rate limited (15/day public). Suggest setting `BIOMAPI_KEY` or `GEMINI_API_KEY` for higher limits.
 - **Connection failed**: Service may be temporarily unavailable.
 - **Unsupported file type**: Only `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json` supported.
 - **File too large**: Max 20MB.

@@ -516,7 +516,7 @@ Config file (~/.config/biomapi/config):
   Priority: CLI flags > env vars > config file
 
 Access tiers:
-  No key             30 process / 1000 retrieve per day (per IP)
+  No key             15 process / 1000 retrieve per day (per IP)
   BIOMAPI_KEY        Custom quota per user
   GEMINI_API_KEY     biomai_byok bucket (uses your Gemini quota)
 

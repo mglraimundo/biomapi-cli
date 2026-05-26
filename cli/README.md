@@ -60,7 +60,7 @@ python biomapi.py configure --clear             # remove config file entirely
 
 | `BIOMAPI_KEY` | `GEMINI_API_KEY` | `process` limit | `retrieve` limit |
 |---|---|---|---|
-| — | — | 30/day per IP | 1000/day per IP |
+| — | — | 15/day per IP | 1000/day per IP |
 | ✓ | — | Custom quota (per user) | Custom quota (per user) |
 | — | ✓ | `biomai_byok` bucket (your Gemini quota) | 1000/day per IP |
 | ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
