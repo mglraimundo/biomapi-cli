@@ -43,13 +43,13 @@ python biomapi.py status
 /plugin install biomapi-cli@mglraimundo-biomapi-cli
 ```
 
-### Codex CLI
-
-Download and extract the zip, then copy to your Codex skills folder:
+### Codex
 
 ```bash
-cp -r skills/biomapi ~/.codex/skills/
+codex plugin marketplace add mglraimundo/biomapi-cli
 ```
+
+Then install and enable **BiomAPI CLI** from the Codex plugin directory.
 
 ## Usage
 
@@ -125,7 +125,7 @@ Keys can also be set via CLI flags (`--key`, `--gemini-key`) or environment vari
 
 ## How it works
 
-The CLI includes a zero-dependency Python script (`scripts/biomapi.py`) that sends files to the BiomAPI `/api/v1/biom/process` endpoint for AI extraction, then returns structured JSON. The same script powers the Claude Code plugin and Codex skill integrations.
+The CLI includes a zero-dependency Python script (`scripts/biomapi.py`) that sends files to the BiomAPI `/api/v1/biom/process` endpoint for AI extraction, then returns structured JSON. The same script powers the Claude Code and Codex marketplace plugins.
 
 ## License
 

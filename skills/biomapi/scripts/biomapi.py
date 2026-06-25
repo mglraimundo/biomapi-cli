@@ -3,8 +3,8 @@
 BiomAPI CLI - Zero-dependency client for BiomAPI biometry extraction.
 
 Processes biometry PDFs/images through the BiomAPI service and retrieves
-results via BiomPIN secure sharing codes. Also works as a Claude Code plugin
-and Codex skill.
+results via BiomPIN secure sharing codes. Also works through Claude Code and
+Codex plugin marketplaces.
 
 Usage:
     biomapi.py configure [--key <key>] [--gemini-key <key>] [--url <url>] [--escrs-url <url>] [--show] [--clear]
