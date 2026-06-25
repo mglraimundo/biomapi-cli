@@ -103,13 +103,13 @@ Posterior keratometry is measured per eye, same structure as anterior K values b
 
 | Field | Description |
 |-------|-------------|
+| `request_id` | Request correlation ID for this response |
 | `schema_version` | Biometry schema version |
 | `app_version` | BiomAPI server version |
 | `extraction.method` | `BiomAI` (LLM extraction) or `BiomDIRECT` (direct/edited) |
 | `extraction.timestamp` | ISO timestamp of when extraction occurred |
+| `extraction.byok` | Whether the request used a user-supplied Gemini key (BiomAI only) |
 | `extraction.llm` | Model used for extraction (BiomAI only) |
-| `extraction.llm_api_metrics` | Token usage stats (BiomAI only) |
-| `extraction.llm_performance` | Response time and retry info (BiomAI only) |
 | `extraction.input_schema_version` | Input schema version on JSON round-trips or direct/manual data |
 | `extraction.source_app` | Client-declared source application for BiomDIRECT data |
 
