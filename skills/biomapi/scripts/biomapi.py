@@ -7,9 +7,9 @@ results via BiomPIN secure sharing codes. Also works as a Claude Code plugin
 and Codex skill.
 
 Usage:
-    biomapi.py configure [--key <key>] [--gemini-key <key>] [--show] [--clear]
-    biomapi.py process <file_path> [<file_path2> ...] [--no-pin] [--key <key>] [--gemini-key <key>]
-    biomapi.py retrieve <biompin_code>
+    biomapi.py configure [--key <key>] [--gemini-key <key>] [--url <url>] [--escrs-url <url>] [--show] [--clear]
+    biomapi.py process <file_path> [<file_path2> ...] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
+    biomapi.py retrieve <biompin_code_or_url>
     biomapi.py csv <file.json> [<file2.json> ...] [--output <dir>]
     biomapi.py usage
     biomapi.py status
@@ -17,7 +17,7 @@ Usage:
 
 Stdout (process/retrieve):
     One JSON object per file, in input order:
-      {"patient_id": ..., "patient_name": ..., "device": ..., "biompin": ..., "saved_json": "/abs/path.json"}
+      {"patient_id": ..., "patient_name": ..., "device": ..., "biompin": ..., "biomapi_url": ..., "escrs_url": ..., "saved_json": "/abs/path.json"}
     biompin is extracted from the API response at biompin.pin.
     The full raw API response is always saved to disk at saved_json.
     On error: {"error": true, "detail": "...", ...}
@@ -28,13 +28,16 @@ Stdout (csv):
 Environment:
     BIOMAPI_KEY      - Optional API key for higher rate limits
     GEMINI_API_KEY   - Optional: your own Gemini key (BYOK, uses biomai_byok limits)
+    ESCRS_IOL_CALCULATOR_URL - Optional: calculator base URL for generated links
 
 Config file (~/.config/biomapi/config):
-    Simple KEY=VALUE format. Keys: BIOMAPI_KEY, GEMINI_API_KEY, BIOMAPI_URL
+    Simple KEY=VALUE format. Keys: BIOMAPI_KEY, GEMINI_API_KEY, BIOMAPI_URL, ESCRS_IOL_CALCULATOR_URL
     Priority: CLI flags > environment variables > config file
     Run `biomapi.py configure` to set up the config file interactively.
 """
 
+import base64
+import binascii
 import json
 import os
 import re
@@ -43,6 +46,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
@@ -87,8 +91,149 @@ _config = _load_config()
 API_KEY = os.environ.get("BIOMAPI_KEY") or _config.get("BIOMAPI_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or _config.get("GEMINI_API_KEY", "")
 BASE_URL = os.environ.get("BIOMAPI_URL") or _config.get("BIOMAPI_URL", "https://biomapi.com")
+ESCRS_IOL_CALCULATOR_URL = (
+    os.environ.get("ESCRS_IOL_CALCULATOR_URL")
+    or _config.get("ESCRS_IOL_CALCULATOR_URL", "https://iolcalculator.escrs.org")
+)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".json"}
+
+
+def _identity_context(patient_name: str | None, patient_id: str | None) -> dict | None:
+    """Return the BiomPIN browser SDK v1 identity context payload."""
+    if not patient_name and not patient_id:
+        return None
+
+    return {
+        "v": 1,
+        "patient_name": patient_name or None,
+        "patient_id": patient_id or None,
+    }
+
+
+def _encode_identity_context(patient_name: str | None, patient_id: str | None) -> str | None:
+    """Encode patient identifiers for the browser-only #biomctx fragment."""
+    context = _identity_context(patient_name, patient_id)
+    if not context:
+        return None
+
+    raw = json.dumps(context, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_identity_context(encoded: str | None) -> dict | None:
+    """Decode a #biomctx value into patient identifiers."""
+    if not encoded:
+        return None
+
+    try:
+        padded = encoded + ("=" * (-len(encoded) % 4))
+        raw = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        parsed = json.loads(raw)
+    except (binascii.Error, UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+
+    if parsed.get("v") not in (None, 1):
+        return None
+
+    patient_name = parsed.get("patient_name") or None
+    patient_id = parsed.get("patient_id") or None
+    if not patient_name and not patient_id:
+        return None
+
+    return {"patient_name": patient_name, "patient_id": patient_id}
+
+
+def _append_identity_fragment(url: str, patient_name: str | None, patient_id: str | None) -> str:
+    """Append #biomctx to a URL when identifiers are available."""
+    encoded = _encode_identity_context(patient_name, patient_id)
+    if not encoded:
+        return url
+
+    split = urlsplit(url)
+    url_without_fragment = urlunsplit((split.scheme, split.netloc, split.path, split.query, ""))
+    return f"{url_without_fragment}#biomctx={encoded}"
+
+
+def _build_biomapi_url(pin: str, patient_name: str | None = None, patient_id: str | None = None) -> str:
+    """Build a BiomAPI direct access URL, including private context when available."""
+    url = f"{BASE_URL.rstrip('/')}/pin/{quote(pin)}"
+    return _append_identity_fragment(url, patient_name, patient_id)
+
+
+def _build_escrs_url(pin: str, patient_name: str | None = None, patient_id: str | None = None) -> str:
+    """Build an ESCRS calculator URL with BiomPIN and optional private context."""
+    split = urlsplit(ESCRS_IOL_CALCULATOR_URL)
+    query = [(key, value) for key, value in parse_qsl(split.query, keep_blank_values=True) if key != "biompin"]
+    query.append(("biompin", pin))
+    url = urlunsplit((split.scheme, split.netloc, split.path, urlencode(query), ""))
+    return _append_identity_fragment(url, patient_name, patient_id)
+
+
+def _decode_identity_context_from_fragment(fragment: str) -> dict | None:
+    """Extract and decode biomctx from a URL fragment."""
+    params = parse_qs(fragment or "", keep_blank_values=True)
+    values = params.get("biomctx")
+    return _decode_identity_context(values[0]) if values else None
+
+
+def _parse_biompin_input(value: str) -> tuple[str, dict | None]:
+    """Accept either a raw BiomPIN or a BiomAPI/ESCRS URL containing one."""
+    raw = value.strip()
+    split = urlsplit(raw)
+    context = _decode_identity_context_from_fragment(split.fragment)
+
+    query_pin = parse_qs(split.query).get("biompin")
+    if query_pin:
+        return query_pin[0], context
+
+    path_parts = [unquote(part) for part in split.path.split("/") if part]
+    if "pin" in path_parts:
+        pin_index = path_parts.index("pin") + 1
+        if pin_index < len(path_parts):
+            return path_parts[pin_index], context
+
+    return raw.split("#", 1)[0], context
+
+
+def _merge_identity_context(result: dict, context: dict | None) -> None:
+    """Restore identifiers into a retrieved response when supplied in #biomctx."""
+    if not context:
+        return
+
+    patient = (result.get("data") or {}).get("patient")
+    if not isinstance(patient, dict):
+        return
+
+    patient["name"] = patient.get("name") or context.get("patient_name")
+    patient["id"] = patient.get("id") or context.get("patient_id")
+
+
+def _compact_summary(result: dict, saved_path: str, biompin_fallback: str | None = None) -> dict:
+    """Return the compact stdout summary for process/retrieve commands."""
+    patient = (result.get("data") or {}).get("patient") or {}
+    if not isinstance(patient, dict):
+        patient = {}
+    biompin_info = result.get("biompin") or {}
+    biompin = biompin_info.get("pin") if isinstance(biompin_info, dict) else None
+    biompin = biompin or biompin_fallback
+    patient_name = patient.get("name")
+    patient_id = patient.get("id")
+
+    summary = {
+        "patient_id": patient_id,
+        "patient_name": patient_name,
+        "device": (result.get("data") or {}).get("biometer", {}).get("device_name"),
+        "biompin": biompin,
+    }
+    if biompin:
+        summary["biomapi_url"] = _build_biomapi_url(biompin, patient_name, patient_id)
+        summary["escrs_url"] = _build_escrs_url(biompin, patient_name, patient_id)
+    summary["saved_json"] = saved_path
+    return summary
 
 
 def _build_multipart(file_path: str, generate_pin: bool) -> tuple[bytes, str]:
@@ -236,7 +381,7 @@ def _process_one(file_path: str, generate_pin: bool) -> dict:
         return {"error": True, "file": file_path, "detail": f"File too large ({file_size_mb:.1f}MB). Maximum: 20MB"}
 
     body, content_type = _build_multipart(file_path, generate_pin)
-    result = _request("POST", f"{BASE_URL}/api/v1/biom/process", body=body, content_type=content_type)
+    result = _request("POST", f"{BASE_URL.rstrip('/')}/api/v1/biom/process", body=body, content_type=content_type)
 
     if result.get("error"):
         return result
@@ -244,15 +389,7 @@ def _process_one(file_path: str, generate_pin: bool) -> dict:
     # Save full response to disk before returning — metadata is preserved here
     saved_path = _save_result(result, file_path)
 
-    patient = (result.get("data") or {}).get("patient", {})
-    biompin_info = result.get("biompin") or {}
-    return {
-        "patient_id": patient.get("id"),
-        "patient_name": patient.get("name"),
-        "device": (result.get("data") or {}).get("biometer", {}).get("device_name"),
-        "biompin": biompin_info.get("pin") if isinstance(biompin_info, dict) else None,
-        "saved_json": saved_path,
-    }
+    return _compact_summary(result, saved_path)
 
 
 def cmd_configure(args: list[str]) -> None:
@@ -265,6 +402,7 @@ def cmd_configure(args: list[str]) -> None:
     key_value = None
     gemini_key_value = None
     url_value = None
+    escrs_url_value = None
 
     i = 0
     while i < len(args):
@@ -277,6 +415,9 @@ def cmd_configure(args: list[str]) -> None:
         elif args[i] == "--url" and i + 1 < len(args):
             url_value = args[i + 1]
             i += 2
+        elif args[i] == "--escrs-url" and i + 1 < len(args):
+            escrs_url_value = args[i + 1]
+            i += 2
         else:
             i += 1
 
@@ -287,7 +428,12 @@ def cmd_configure(args: list[str]) -> None:
         print(f"Config file: {path}", file=sys.stderr)
         print(f"File exists: {'yes' if os.path.isfile(path) else 'no'}", file=sys.stderr)
         print(file=sys.stderr)
-        for name, default in [("BIOMAPI_KEY", None), ("GEMINI_API_KEY", None), ("BIOMAPI_URL", "https://biomapi.com")]:
+        for name, default in [
+            ("BIOMAPI_KEY", None),
+            ("GEMINI_API_KEY", None),
+            ("BIOMAPI_URL", "https://biomapi.com"),
+            ("ESCRS_IOL_CALCULATOR_URL", "https://iolcalculator.escrs.org"),
+        ]:
             env_val = os.environ.get(name)
             cfg_val = cfg.get(name)
             if env_val:
@@ -331,7 +477,7 @@ def cmd_configure(args: list[str]) -> None:
         return
 
     # Flag-based (non-interactive): at least one value flag provided
-    if key_value is not None or gemini_key_value is not None or url_value is not None:
+    if key_value is not None or gemini_key_value is not None or url_value is not None or escrs_url_value is not None:
         cfg = _load_config()
         if key_value is not None:
             cfg["BIOMAPI_KEY"] = key_value
@@ -339,6 +485,8 @@ def cmd_configure(args: list[str]) -> None:
             cfg["GEMINI_API_KEY"] = gemini_key_value
         if url_value is not None:
             cfg["BIOMAPI_URL"] = url_value
+        if escrs_url_value is not None:
+            cfg["ESCRS_IOL_CALCULATOR_URL"] = escrs_url_value
         saved = _save_config(cfg)
         print(f"Saved to {saved}", file=sys.stderr)
         return
@@ -394,28 +542,19 @@ def cmd_process(file_paths: list[str], generate_pin: bool = True) -> None:
         sys.exit(1)
 
 
-def cmd_retrieve(biompin_code: str) -> None:
+def cmd_retrieve(biompin_input: str) -> None:
     """Retrieve biometry data using a BiomPIN code."""
-    from urllib.parse import quote
-
-    url = f"{BASE_URL}/api/v1/biom/retrieve?biom_pin={quote(biompin_code)}"
+    biompin_code, identity_context = _parse_biompin_input(biompin_input)
+    url = f"{BASE_URL.rstrip('/')}/api/v1/biom/retrieve?biom_pin={quote(biompin_code)}"
     result = _request("GET", url)
 
     if result.get("error"):
         print(json.dumps(result))
         sys.exit(1)
 
+    _merge_identity_context(result, identity_context)
     saved_path = _save_result(result, os.path.join(os.getcwd(), "_retrieve"))
-    patient = (result.get("data") or {}).get("patient", {})
-    biompin_info = result.get("biompin") or {}
-    biompin = biompin_info.get("pin") if isinstance(biompin_info, dict) else None
-    print(json.dumps({
-        "patient_id": patient.get("id"),
-        "patient_name": patient.get("name"),
-        "device": (result.get("data") or {}).get("biometer", {}).get("device_name"),
-        "biompin": biompin or biompin_code,
-        "saved_json": saved_path,
-    }))
+    print(json.dumps(_compact_summary(result, saved_path, biompin_fallback=biompin_code)))
 
 
 def cmd_csv(json_paths: list[str], output_dir: str) -> None:
@@ -433,7 +572,7 @@ def cmd_csv(json_paths: list[str], output_dir: str) -> None:
             sys.exit(1)
 
     payload = json.dumps({"responses": responses}).encode("utf-8")
-    result = _request("POST", f"{BASE_URL}/api/v1/biom/csv", body=payload, content_type="application/json", raw=True)
+    result = _request("POST", f"{BASE_URL.rstrip('/')}/api/v1/biom/csv", body=payload, content_type="application/json", raw=True)
 
     if isinstance(result, dict) and result.get("error"):
         print(json.dumps(result))
@@ -448,7 +587,7 @@ def cmd_csv(json_paths: list[str], output_dir: str) -> None:
 
 def cmd_usage() -> None:
     """Check current rate limit usage for the authenticated key or public IP."""
-    result = _request("GET", f"{BASE_URL}/api/v1/biom/usage")
+    result = _request("GET", f"{BASE_URL.rstrip('/')}/api/v1/biom/usage")
     print(json.dumps(result))
     if isinstance(result, dict) and result.get("error"):
         sys.exit(1)
@@ -456,7 +595,7 @@ def cmd_usage() -> None:
 
 def cmd_status() -> None:
     """Check lightweight API status."""
-    result = _request("GET", f"{BASE_URL}/api/v1/status")
+    result = _request("GET", f"{BASE_URL.rstrip('/')}/api/v1/status")
     print(json.dumps(result))
     if result.get("error"):
         sys.exit(1)
@@ -466,9 +605,9 @@ _HELP = """\
 BiomAPI CLI — zero-dependency Python client for BiomAPI biometry extraction.
 
 Usage:
-  biomapi.py configure                     [--key <key>] [--gemini-key <key>] [--show] [--clear]
-  biomapi.py process <file> [<file2> ...]  [--no-pin] [--key <key>] [--gemini-key <key>]
-  biomapi.py retrieve <biompin_code>       [--key <key>]
+  biomapi.py configure                     [--key <key>] [--gemini-key <key>] [--url <url>] [--escrs-url <url>] [--show] [--clear]
+  biomapi.py process <file> [<file2> ...]  [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
+  biomapi.py retrieve <biompin_or_url>     [--key <key>] [--escrs-url <url>]
   biomapi.py csv <file.json> [<file2.json> ...] [--output <dir>]
   biomapi.py usage                         [--key <key>]
   biomapi.py status
@@ -480,6 +619,7 @@ Commands:
                  --key <key>         Set BIOMAPI_KEY
                  --gemini-key <key>  Set GEMINI_API_KEY
                  --url <url>         Set BIOMAPI_URL (for self-hosted instances)
+                 --escrs-url <url>   Set ESCRS_IOL_CALCULATOR_URL
                  --show              Display current configuration
                  --clear             Remove the config file
                  --clear-key         Remove only BIOMAPI_KEY from config
@@ -503,12 +643,15 @@ Options:
   --no-pin          Skip BiomPIN generation on process (default: generate)
   --key <key>       Override BIOMAPI_KEY (higher daily limits)
   --gemini-key <k>  Override GEMINI_API_KEY (BYOK — separate biomai_byok bucket)
+  --escrs-url <url> Override ESCRS_IOL_CALCULATOR_URL for generated links
   -h, --help        Show this help message
 
 Environment variables:
   BIOMAPI_KEY      BiomAPI key for higher rate limits on all endpoints
   GEMINI_API_KEY   Your own Gemini API key (BYOK — separate biomai_byok bucket)
   BIOMAPI_URL      API base URL (default: https://biomapi.com)
+  ESCRS_IOL_CALCULATOR_URL
+                  ESCRS calculator base URL (default: https://iolcalculator.escrs.org)
 
 Config file (~/.config/biomapi/config):
   Simple KEY=VALUE pairs. Same keys as environment variables.
@@ -546,8 +689,8 @@ def main() -> None:
         cmd_configure(args[1:])
         return
 
-    # Extract global flags: --key and --gemini-key (override module-level vars)
-    global API_KEY, GEMINI_API_KEY
+    # Extract global flags: --key/--gemini-key/--escrs-url (override module-level vars)
+    global API_KEY, GEMINI_API_KEY, ESCRS_IOL_CALCULATOR_URL
     filtered = []
     i = 0
     while i < len(args):
@@ -556,6 +699,9 @@ def main() -> None:
             i += 2
         elif args[i] == "--gemini-key" and i + 1 < len(args):
             GEMINI_API_KEY = args[i + 1]
+            i += 2
+        elif args[i] == "--escrs-url" and i + 1 < len(args):
+            ESCRS_IOL_CALCULATOR_URL = args[i + 1]
             i += 2
         else:
             filtered.append(args[i])
@@ -579,7 +725,7 @@ def main() -> None:
 
     elif command == "retrieve":
         if len(args) < 2:
-            print("Usage: biomapi.py retrieve <biompin_code>", file=sys.stderr)
+            print("Usage: biomapi.py retrieve <biompin_code_or_url>", file=sys.stderr)
             sys.exit(1)
         cmd_retrieve(args[1])
 

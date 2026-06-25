@@ -36,6 +36,7 @@ If the relative path doesn't resolve, try `${CLAUDE_SKILL_DIR}/scripts/biomapi.p
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `BIOMAPI_URL` | No | `https://biomapi.com` | API base URL |
+| `ESCRS_IOL_CALCULATOR_URL` | No | `https://iolcalculator.escrs.org` | ESCRS calculator base URL for generated links |
 | `BIOMAPI_KEY` | No | *(none)* | API key for higher rate limits |
 | `GEMINI_API_KEY` | No | *(none)* | Your own Gemini API key (BYOK — uses the separate `biomai_byok` bucket) |
 
@@ -98,6 +99,8 @@ python3 scripts/biomapi.py process file1.pdf file2.pdf file3.pdf
 python3 scripts/biomapi.py retrieve word-word-123456
 ```
 
+The retrieve command also accepts a full BiomAPI or ESCRS URL containing `#biomctx=...`; use that form when available so patient name/ID can be restored locally after BiomPIN retrieval.
+
 ### Generate CSV export
 
 ```bash
@@ -138,6 +141,8 @@ The script always outputs a **compact summary** JSON (not the full API response)
   "patient_name": "JD",
   "device": "IOLMaster 700",
   "biompin": "lunar-rocket-731904",
+  "biomapi_url": "https://biomapi.com/pin/lunar-rocket-731904#biomctx=...",
+  "escrs_url": "https://iolcalculator.escrs.org?biompin=lunar-rocket-731904#biomctx=...",
   "saved_json": "/abs/path/to/biomapi-12345-iolmaster700.json"
 }
 ```
@@ -157,9 +162,9 @@ Patient: JD (ID: 12345)
 
 BiomPIN: lunar-rocket-731904
 
-BiomAPI: https://biomapi.com/pin/lunar-rocket-731904
+BiomAPI: <biomapi_url from stdout>
 
-ESCRS IOL Calculator: <configured calculator URL>?biompin=lunar-rocket-731904
+ESCRS IOL Calculator: <escrs_url from stdout>
 
 Saved: /abs/path/to/biomapi-jd-iolmaster700.json
 ```
@@ -167,6 +172,7 @@ Saved: /abs/path/to/biomapi-jd-iolmaster700.json
 Each line MUST be separated by a blank line for readability. Do not collapse them into a single block.
 
 - BiomPIN is generated **by default**; use `--no-pin` only if the user explicitly requests no BiomPIN
+- Use the `biomapi_url` and `escrs_url` fields exactly as returned. They may include a browser-only `#biomctx=...` fragment so patient name/ID survive opening in a new browser session without being sent to the server.
 - If no BiomPIN: show patient line and Saved path only (no URLs)
 - No biometry table unless the user explicitly asks
 

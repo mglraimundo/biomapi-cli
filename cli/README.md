@@ -40,6 +40,7 @@ This prompts interactively. To set keys non-interactively (useful in scripts):
 ```
 python biomapi.py configure --key biom_your_key_here
 python biomapi.py configure --gemini-key AIza_your_key_here
+python biomapi.py configure --escrs-url https://iolcalculator.escrs.org
 ```
 
 View your current configuration:
@@ -67,24 +68,27 @@ python biomapi.py configure --clear             # remove config file entirely
 
 ### Alternative: environment variables
 
-Keys can also be set via environment variables (or passed per-call with `--key`/`--gemini-key` flags).
+Keys and link targets can also be set via environment variables (or passed per-call with `--key`/`--gemini-key`/`--escrs-url` flags).
 
 **Linux / macOS** (bash/zsh — add to `~/.bashrc` or `~/.zshrc` to persist):
 ```bash
 export BIOMAPI_KEY=biom_your_key_here
 export GEMINI_API_KEY=AIza_your_key_here
+export ESCRS_IOL_CALCULATOR_URL=https://iolcalculator.escrs.org
 ```
 
 **Windows PowerShell** (add to `$PROFILE` to persist):
 ```powershell
 $env:BIOMAPI_KEY = "biom_your_key_here"
 $env:GEMINI_API_KEY = "AIza_your_key_here"
+$env:ESCRS_IOL_CALCULATOR_URL = "https://iolcalculator.escrs.org"
 ```
 
 **Windows CMD** (use `setx` for persistence across sessions):
 ```cmd
 setx BIOMAPI_KEY biom_your_key_here
 setx GEMINI_API_KEY AIza_your_key_here
+setx ESCRS_IOL_CALCULATOR_URL https://iolcalculator.escrs.org
 ```
 
 ### Config file location
@@ -103,7 +107,7 @@ Priority: CLI flags > environment variables > config file.
 ### `configure` — Set up API keys
 
 ```
-biomapi.py configure [--key <key>] [--gemini-key <key>] [--url <url>] [--show] [--clear] [--clear-key] [--clear-gemini-key]
+biomapi.py configure [--key <key>] [--gemini-key <key>] [--url <url>] [--escrs-url <url>] [--show] [--clear] [--clear-key] [--clear-gemini-key]
 ```
 
 Saves API keys to `~/.config/biomapi/config`. Works identically on Windows, macOS, and Linux.
@@ -112,6 +116,7 @@ Saves API keys to `~/.config/biomapi/config`. Works identically on Windows, macO
 python biomapi.py configure                           # interactive
 python biomapi.py configure --key biom_abc123         # set BIOMAPI_KEY
 python biomapi.py configure --gemini-key AIza_xxx     # set GEMINI_API_KEY
+python biomapi.py configure --escrs-url https://iolcalculator.escrs.org
 python biomapi.py configure --show                    # view current config
 python biomapi.py configure --clear                   # remove config file
 python biomapi.py configure --clear-key               # remove only BIOMAPI_KEY
@@ -122,7 +127,7 @@ python biomapi.py configure --clear-key               # remove only BIOMAPI_KEY
 ### `process` — Extract biometry from a file
 
 ```
-biomapi.py process <file> [<file2> ...] [--no-pin] [--key <key>] [--gemini-key <key>]
+biomapi.py process <file> [<file2> ...] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
 ```
 
 - Accepts PDF, PNG, JPG, JPEG, JSON (max 20 MB each)
@@ -134,7 +139,7 @@ biomapi.py process <file> [<file2> ...] [--no-pin] [--key <key>] [--gemini-key <
 **Stdout** prints a compact summary line per file (useful for scripting):
 
 ```json
-{"patient_id": "12345", "patient_name": "JD", "device": "IOLMaster 700", "biompin": "lunar-rocket-731904", "saved_json": "/abs/path/biomapi-12345-iolmaster700.json"}
+{"patient_id": "12345", "patient_name": "JD", "device": "IOLMaster 700", "biompin": "lunar-rocket-731904", "biomapi_url": "https://biomapi.com/pin/lunar-rocket-731904#biomctx=...", "escrs_url": "https://iolcalculator.escrs.org?biompin=lunar-rocket-731904#biomctx=...", "saved_json": "/abs/path/biomapi-12345-iolmaster700.json"}
 ```
 
 **Examples:**
@@ -206,18 +211,19 @@ GEMINI_API_KEY=AIza_xxx python biomapi.py process scan.pdf
 ### `retrieve` — Retrieve results using a BiomPIN
 
 ```
-biomapi.py retrieve <biompin_code>
+biomapi.py retrieve <biompin_code_or_url>
 ```
 
-Fetches previously extracted data using a BiomPIN sharing code. The full JSON is saved to the current directory.
+Fetches previously extracted data using a BiomPIN sharing code. You can also pass a full BiomAPI or ESCRS URL containing `#biomctx=...`; when present, the CLI restores patient name/ID into the saved JSON and generated links. Plain BiomPIN retrieval may return empty patient identifiers because BiomPIN storage intentionally redacts them.
 
 ```bash
 python biomapi.py retrieve lunar-rocket-731904
+python biomapi.py retrieve 'https://biomapi.com/pin/lunar-rocket-731904#biomctx=...'
 ```
 
 **Stdout:**
 ```json
-{"patient_id": "12345", "patient_name": "JD", "device": "IOLMaster 700", "biompin": "lunar-rocket-731904", "saved_json": "/abs/path/biomapi-12345-iolmaster700.json"}
+{"patient_id": null, "patient_name": null, "device": "IOLMaster 700", "biompin": "lunar-rocket-731904", "biomapi_url": "https://biomapi.com/pin/lunar-rocket-731904", "escrs_url": "https://iolcalculator.escrs.org?biompin=lunar-rocket-731904", "saved_json": "/abs/path/biomapi-YYYY-MM-DD-iolmaster700.json"}
 ```
 
 BiomPINs expire after 31 days (744 hours) by default (configurable per instance).

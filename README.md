@@ -62,8 +62,8 @@ python biomapi.py process report.pdf
 ```
 Patient: JD (ID: 12345)
 BiomPIN: lunar-rocket-731904
-BiomAPI: https://biomapi.com/pin/lunar-rocket-731904
-ESCRS IOL Calculator: <configured calculator URL>?biompin=lunar-rocket-731904
+BiomAPI: https://biomapi.com/pin/lunar-rocket-731904#biomctx=...
+ESCRS IOL Calculator: https://iolcalculator.escrs.org?biompin=lunar-rocket-731904#biomctx=...
 ```
 
 Multiple files are processed simultaneously. See [`cli/README.md`](cli/README.md) for the full reference.
@@ -78,7 +78,7 @@ Multiple files are processed simultaneously. See [`cli/README.md`](cli/README.md
 
 ### BiomPIN sharing
 
-A BiomPIN is generated **by default** with every extraction. The output includes a direct URL to view results and an ESCRS IOL Calculator link pre-loaded with the biometry data.
+A BiomPIN is generated **by default** with every extraction. The output includes a direct URL to view results and an ESCRS IOL Calculator link pre-loaded with the biometry data. When patient identifiers are available, both URLs include a browser-only `#biomctx=...` fragment so name/ID can be restored in a new browser session without being sent to the server.
 
 To skip BiomPIN generation:
 
