@@ -112,6 +112,9 @@ Posterior keratometry is measured per eye, same structure as anterior K values b
 | `extraction.llm` | Model used for extraction (BiomAI only) |
 | `extraction.input_schema_version` | Input schema version on JSON round-trips or direct/manual data |
 | `extraction.source_app` | Client-declared source application for BiomDIRECT data |
+| `extraction.source_version` | Client-declared source application version for BiomDIRECT data |
+
+Public BiomAI metadata contains provenance only. Operational LLM diagnostics such as token counts, retry timing, response time, and preprocessing details are internal and are not returned in API payloads.
 
 ### BiomPIN
 
