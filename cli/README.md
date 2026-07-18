@@ -168,6 +168,7 @@ GEMINI_API_KEY=AIza_xxx python biomapi.py process scan.pdf
   "success": true,
   "data": {
     "biometer": { "device_name": "IOLMaster 700", "manufacturer": "Zeiss" },
+    "exam_date": "2026-04-21",
     "patient": { "id": "12345", "name": "JD", "date_of_birth": "1960-01-15", "gender": "Male" },
     "right_eye": {
       "AL": 23.45,
@@ -258,6 +259,7 @@ python biomapi.py csv *.json --output ./exports
 | Column | Description |
 |--------|-------------|
 | `filename` | Source JSON filename |
+| `exam_date` | Biometry examination date (ISO format) |
 | `right_eye` | `1` = right eye, `0` = left eye |
 | `biometer_device_name` | Device model (e.g. IOLMaster 700) |
 | `biometer_manufacturer` | Manufacturer (e.g. Zeiss) |

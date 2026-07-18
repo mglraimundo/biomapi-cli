@@ -43,6 +43,12 @@ PK Support = device can provide posterior keratometry measurements.
 
 All measurements are optional (nullable). A `null` value means the measurement was not present on the report.
 
+### Report Data
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `exam_date` | date | Biometry examination date in ISO format (YYYY-MM-DD), distinct from date of birth |
+
 ### Typical Ranges (clinical context)
 
 These are NOT validation ranges — they're typical adult values for clinical context:
