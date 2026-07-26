@@ -4,6 +4,8 @@ Biometry data extraction from optical biometry reports (PDF/images/JSON) via [bi
 
 Upload a biometry PDF or image and get structured measurements (AL, K1, K2, ACD, CCT, and more) returned as a clinical biometry table.
 
+The CLI requires Python 3.11+ and accepts PDF, PNG, JPG, JPEG, and JSON inputs up to 15 MiB each.
+
 ## Supported Devices
 
 | Device | Manufacturer | PK Support |
@@ -47,9 +49,10 @@ python biomapi.py status
 
 ```bash
 codex plugin marketplace add mglraimundo/biomapi-cli
+codex plugin add biomapi-cli@biomapi
 ```
 
-Then install and enable **BiomAPI CLI** from the Codex plugin directory.
+Start a new task after installation so Codex loads the bundled skill.
 
 ## Usage
 
@@ -66,7 +69,7 @@ BiomAPI: https://biomapi.com/pin/lunar-rocket-731904#biomctx=...
 ESCRS IOL Calculator: https://iolcalculator.escrs.org?biompin=lunar-rocket-731904#biomctx=...
 ```
 
-Multiple files are processed simultaneously. See [`cli/README.md`](cli/README.md) for the full reference.
+Multiple files use up to four workers, while summaries remain in input order. See [`cli/README.md`](cli/README.md) for the full reference.
 
 ### Extracted Data
 
@@ -78,7 +81,7 @@ Multiple files are processed simultaneously. See [`cli/README.md`](cli/README.md
 
 ### BiomPIN sharing
 
-A BiomPIN is generated **by default** with every extraction. The output includes a direct URL to view results and an ESCRS IOL Calculator link pre-loaded with the biometry data. When patient identifiers are available, both URLs include a browser-only `#biomctx=...` fragment so name/ID can be restored in a new browser session without being sent to the server.
+A BiomPIN is generated **by default** with every extraction. The output includes a direct URL to view results and an ESCRS IOL Calculator link pre-loaded with the biometry data. When patient identifiers are available, both URLs can include a reversible `#biomctx=...` fragment so name/ID can be restored in a new browser session. The fragment is not sent in a normal HTTP request, but anyone receiving the complete URL can decode it; treat that URL as patient-identifying data.
 
 To skip BiomPIN generation:
 
@@ -92,6 +95,17 @@ Retrieve shared data:
 python biomapi.py retrieve lunar-rocket-731904
 ```
 
+Generate a by-eye CSV from saved BiomAPI JSON responses:
+
+```bash
+python biomapi.py csv result-one.json result-two.json --output ./exports
+```
+
+The supported commands are `configure`, `process`, `retrieve`, `csv`, `usage`,
+and `status`. Saved extraction and retrieval responses use collision-safe
+filenames: an existing file is preserved and the new file receives `-2`, `-3`,
+or the next available numeric suffix.
+
 ### ESCRS IOL Calculator
 
 The ESCRS link is included in every default output. Just process the biometry file — no extra steps.
@@ -104,7 +118,12 @@ Run the configure command to save your API keys (works on Windows, macOS, and Li
 python biomapi.py configure
 ```
 
-Or set keys directly without interactive prompts:
+Prefer interactive configuration or environment variables so secrets are not
+placed in chat, shell history, or process listings. On POSIX systems, the
+configuration directory is saved with mode `0700` and the file with mode
+`0600`. On Windows, access follows the user-profile ACL.
+
+For controlled automation, keys can also be set non-interactively:
 
 ```
 python biomapi.py configure --key biom_your_key_here
@@ -112,7 +131,10 @@ python biomapi.py configure --gemini-key AIza_your_key_here
 python biomapi.py configure --show    # view current config
 ```
 
-Keys can also be set via CLI flags (`--key`, `--gemini-key`) or environment variables. See [`cli/README.md`](cli/README.md) for the full reference including Windows instructions.
+Keys can also be supplied per command with CLI flags (`--key`,
+`--gemini-key`), but environment variables are safer for most automation. See
+[`cli/README.md`](cli/README.md) for the full reference including Windows
+instructions.
 
 **Access tiers:**
 
@@ -126,6 +148,8 @@ Keys can also be set via CLI flags (`--key`, `--gemini-key`) or environment vari
 ## How it works
 
 The CLI includes a zero-dependency Python script (`scripts/biomapi.py`) that sends files to the BiomAPI `/api/v1/biom/process` endpoint for AI extraction, then returns structured JSON. The same script powers the Claude Code and Codex marketplace plugins.
+
+PDF and image extraction also sends the report to Google Gemini. The host assistant can pass the local path directly to the script without reading the source into its own context.
 
 ## License
 

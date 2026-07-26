@@ -42,12 +42,29 @@ import json
 import os
 import re
 import sys
+import tempfile
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
+
+
+MIN_PYTHON = (3, 11)
+if sys.version_info < MIN_PYTHON:
+    current = ".".join(str(part) for part in sys.version_info[:3])
+    required = ".".join(str(part) for part in MIN_PYTHON)
+    print(
+        f"BiomAPI CLI requires Python {required} or newer; found Python {current}.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+
+MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
+MAX_CONCURRENT_FILES = 4
+SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".json"}
 
 
 def _config_path() -> str:
@@ -71,12 +88,33 @@ def _load_config() -> dict:
 
 
 def _save_config(config: dict) -> str:
-    """Write config dict to ~/.config/biomapi/config. Creates dirs if needed. Returns path."""
+    """Atomically write the config with private POSIX permissions."""
     path = _config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        for k, v in config.items():
-            f.write(f"{k}={v}\n")
+    config_dir = os.path.dirname(path)
+    os.makedirs(config_dir, mode=0o700, exist_ok=True)
+    if os.name == "posix":
+        os.chmod(config_dir, 0o700)
+
+    fd, temporary_path = tempfile.mkstemp(prefix=".config-", dir=config_dir, text=True)
+    try:
+        if os.name == "posix":
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = -1
+            for key, value in config.items():
+                f.write(f"{key}={value}\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_path, path)
+        if os.name == "posix":
+            os.chmod(path, 0o600)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.remove(temporary_path)
+        except FileNotFoundError:
+            pass
     return path
 
 
@@ -87,7 +125,11 @@ def _mask_key(value: str) -> str:
     return value[:10] + "..."
 
 
-_config = _load_config()
+try:
+    _config = _load_config()
+except OSError as e:
+    print(json.dumps({"error": True, "detail": f"Could not read config file: {e}"}))
+    raise SystemExit(1)
 API_KEY = os.environ.get("BIOMAPI_KEY") or _config.get("BIOMAPI_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or _config.get("GEMINI_API_KEY", "")
 BASE_URL = os.environ.get("BIOMAPI_URL") or _config.get("BIOMAPI_URL", "https://biomapi.com")
@@ -95,8 +137,6 @@ ESCRS_IOL_CALCULATOR_URL = (
     os.environ.get("ESCRS_IOL_CALCULATOR_URL")
     or _config.get("ESCRS_IOL_CALCULATOR_URL", "https://iolcalculator.escrs.org")
 )
-
-SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".json"}
 
 
 def _identity_context(patient_name: str | None, patient_id: str | None) -> dict | None:
@@ -112,7 +152,7 @@ def _identity_context(patient_name: str | None, patient_id: str | None) -> dict 
 
 
 def _encode_identity_context(patient_name: str | None, patient_id: str | None) -> str | None:
-    """Encode patient identifiers for the browser-only #biomctx fragment."""
+    """Encode patient identifiers for the reversible #biomctx URL fragment."""
     context = _identity_context(patient_name, patient_id)
     if not context:
         return None
@@ -255,33 +295,22 @@ def _build_multipart(file_path: str, generate_pin: bool) -> tuple[bytes, str]:
     }
     content_type = content_types.get(ext, "application/octet-stream")
 
-    parts = []
-
-    # File part
-    parts.append(
+    file_header = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
         f"Content-Type: {content_type}\r\n\r\n"
-    )
-    parts.append(file_data)
-    parts.append(b"\r\n")
-
-    # BiomPIN part
-    parts.append(
+    ).encode("utf-8")
+    biompin_part = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="biompin"\r\n\r\n'
         f"{'true' if generate_pin else 'false'}\r\n"
+    ).encode("utf-8")
+    closing_boundary = f"--{boundary}--\r\n".encode("utf-8")
+
+    return (
+        b"".join((file_header, file_data, b"\r\n", biompin_part, closing_boundary)),
+        f"multipart/form-data; boundary={boundary}",
     )
-
-    # Closing boundary
-    parts.append(f"--{boundary}--\r\n")
-
-    # Combine parts (mix of str and bytes)
-    body = b""
-    for part in parts:
-        body += part.encode("utf-8") if isinstance(part, str) else part
-
-    return body, f"multipart/form-data; boundary={boundary}"
 
 
 def _request(method: str, url: str, body: bytes | None = None, content_type: str | None = None, raw: bool = False) -> dict | str:
@@ -301,18 +330,35 @@ def _request(method: str, url: str, body: bytes | None = None, content_type: str
             response_body = resp.read().decode("utf-8")
             if raw:
                 return response_body
-            return json.loads(response_body)
+            parsed = json.loads(response_body)
+            if not isinstance(parsed, dict):
+                return {"error": True, "detail": "Invalid response from BiomAPI: expected a JSON object."}
+            return parsed
     except HTTPError as e:
         error_body = e.read().decode("utf-8", errors="replace")
         try:
             error_json = json.loads(error_body)
-            error = error_json.get("error", {})
-            detail = error.get("message") or error_json.get("detail", error_body)
-        except json.JSONDecodeError:
+            error = error_json.get("error")
+            if isinstance(error, dict):
+                detail = error.get("message") or error_json.get("detail", error_body)
+            elif isinstance(error, str):
+                detail = error
+            else:
+                detail = error_json.get("detail", error_body)
+            if not isinstance(detail, str):
+                detail = json.dumps(detail, separators=(",", ":"))
+        except (json.JSONDecodeError, AttributeError):
             detail = error_body
         return {"error": True, "status": e.code, "detail": detail}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        expected = "text" if raw else "a JSON object"
+        return {"error": True, "detail": f"Invalid response from BiomAPI: expected UTF-8 {expected}."}
     except URLError as e:
         return {"error": True, "detail": f"Connection failed: {e.reason}"}
+    except TimeoutError:
+        return {"error": True, "detail": "Connection failed: request timed out."}
+    except OSError as e:
+        return {"error": True, "detail": f"Connection failed: {e}"}
 
 
 def _generate_filename(result: dict) -> str:
@@ -339,22 +385,39 @@ def _generate_filename(result: dict) -> str:
     return f"biomapi-{id_part}-{device_part}.json"
 
 
+def _write_unique_json(result: dict, save_dir: str, filename: str) -> str:
+    """Write JSON without replacing an existing file."""
+    stem, extension = os.path.splitext(filename)
+    suffix = 1
+    while True:
+        candidate = filename if suffix == 1 else f"{stem}-{suffix}{extension}"
+        save_path = os.path.join(save_dir, candidate)
+        try:
+            with open(save_path, "x", encoding="utf-8") as f:
+                json.dump(result, f, indent=2, ensure_ascii=False)
+            return os.path.abspath(save_path)
+        except FileExistsError:
+            suffix += 1
+
+
 def _save_result(result: dict, source_path: str) -> str:
-    """Save full API response JSON next to source_path. Returns absolute save path."""
+    """Save the full response beside the source, falling back to the current directory."""
     filename = _generate_filename(result)
-    save_dir = os.path.dirname(source_path) or os.getcwd()
-    try:
-        os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, filename)
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        return os.path.abspath(save_path)
-    except OSError:
-        # Fallback to cwd if source dir is not writable
-        save_path = os.path.join(os.getcwd(), filename)
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        return os.path.abspath(save_path)
+    preferred_dir = os.path.dirname(source_path) or os.getcwd()
+    save_dirs = [preferred_dir]
+    current_dir = os.getcwd()
+    if os.path.abspath(preferred_dir) != os.path.abspath(current_dir):
+        save_dirs.append(current_dir)
+
+    errors = []
+    for save_dir in save_dirs:
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            return _write_unique_json(result, save_dir, filename)
+        except OSError as e:
+            errors.append(f"{save_dir}: {e}")
+
+    raise OSError("Could not save result JSON (" + "; ".join(errors) + ")")
 
 
 def _process_one(file_path: str, generate_pin: bool) -> dict:
@@ -376,18 +439,32 @@ def _process_one(file_path: str, generate_pin: bool) -> dict:
             "detail": f"Unsupported file type '{ext}'. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
         }
 
-    file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-    if file_size_mb > 20:
-        return {"error": True, "file": file_path, "detail": f"File too large ({file_size_mb:.1f}MB). Maximum: 20MB"}
+    try:
+        file_size_bytes = os.path.getsize(file_path)
+    except OSError as e:
+        return {"error": True, "file": file_path, "detail": f"Could not inspect file: {e}"}
+    if file_size_bytes > MAX_FILE_SIZE_BYTES:
+        file_size_mib = file_size_bytes / (1024 * 1024)
+        return {
+            "error": True,
+            "file": file_path,
+            "detail": f"File too large ({file_size_mib:.1f} MiB). Maximum: 15 MiB",
+        }
 
-    body, content_type = _build_multipart(file_path, generate_pin)
+    try:
+        body, content_type = _build_multipart(file_path, generate_pin)
+    except OSError as e:
+        return {"error": True, "file": file_path, "detail": f"Could not read file: {e}"}
     result = _request("POST", f"{BASE_URL.rstrip('/')}/api/v1/biom/process", body=body, content_type=content_type)
 
     if result.get("error"):
         return result
 
     # Save full response to disk before returning — metadata is preserved here
-    saved_path = _save_result(result, file_path)
+    try:
+        saved_path = _save_result(result, file_path)
+    except OSError as e:
+        return {"error": True, "file": file_path, "detail": str(e)}
 
     return _compact_summary(result, saved_path)
 
@@ -452,6 +529,9 @@ def cmd_configure(args: list[str]) -> None:
             print(f"Removed {path}", file=sys.stderr)
         except FileNotFoundError:
             print(f"No config file to remove ({path})", file=sys.stderr)
+        except OSError as e:
+            print(json.dumps({"error": True, "detail": f"Could not remove config file: {e}"}))
+            sys.exit(1)
         return
 
     if clear_key or clear_gemini_key:
@@ -465,12 +545,19 @@ def cmd_configure(args: list[str]) -> None:
             removed.append("GEMINI_API_KEY")
         if removed:
             if cfg:
-                _save_config(cfg)
+                try:
+                    _save_config(cfg)
+                except OSError as e:
+                    print(json.dumps({"error": True, "detail": f"Could not save config file: {e}"}))
+                    sys.exit(1)
             else:
                 try:
                     os.remove(path)
                 except FileNotFoundError:
                     pass
+                except OSError as e:
+                    print(json.dumps({"error": True, "detail": f"Could not remove config file: {e}"}))
+                    sys.exit(1)
             print(f"Removed: {', '.join(removed)}", file=sys.stderr)
         else:
             print("Nothing to remove.", file=sys.stderr)
@@ -487,7 +574,11 @@ def cmd_configure(args: list[str]) -> None:
             cfg["BIOMAPI_URL"] = url_value
         if escrs_url_value is not None:
             cfg["ESCRS_IOL_CALCULATOR_URL"] = escrs_url_value
-        saved = _save_config(cfg)
+        try:
+            saved = _save_config(cfg)
+        except OSError as e:
+            print(json.dumps({"error": True, "detail": f"Could not save config file: {e}"}))
+            sys.exit(1)
         print(f"Saved to {saved}", file=sys.stderr)
         return
 
@@ -516,7 +607,11 @@ def cmd_configure(args: list[str]) -> None:
         print("\nNo keys configured. Skipping save.", file=sys.stderr)
         return
 
-    saved = _save_config(cfg)
+    try:
+        saved = _save_config(cfg)
+    except OSError as e:
+        print(json.dumps({"error": True, "detail": f"Could not save config file: {e}"}))
+        sys.exit(1)
     print(f"\nSaved to {saved}", file=sys.stderr)
 
 
@@ -530,10 +625,18 @@ def cmd_process(file_paths: list[str], generate_pin: bool = True) -> None:
         return
 
     results = [None] * len(file_paths)
-    with ThreadPoolExecutor(max_workers=len(file_paths)) as executor:
+    with ThreadPoolExecutor(max_workers=min(len(file_paths), MAX_CONCURRENT_FILES)) as executor:
         futures = {executor.submit(_process_one, fp, generate_pin): i for i, fp in enumerate(file_paths)}
         for future in as_completed(futures):
-            results[futures[future]] = future.result()
+            index = futures[future]
+            try:
+                results[index] = future.result()
+            except Exception as e:
+                results[index] = {
+                    "error": True,
+                    "file": os.path.abspath(file_paths[index]),
+                    "detail": f"Processing failed locally: {e}",
+                }
 
     for result in results:
         print(json.dumps(result))
@@ -553,13 +656,21 @@ def cmd_retrieve(biompin_input: str) -> None:
         sys.exit(1)
 
     _merge_identity_context(result, identity_context)
-    saved_path = _save_result(result, os.path.join(os.getcwd(), "_retrieve"))
+    try:
+        saved_path = _save_result(result, os.path.join(os.getcwd(), "_retrieve"))
+    except OSError as e:
+        print(json.dumps({"error": True, "detail": str(e)}))
+        sys.exit(1)
     print(json.dumps(_compact_summary(result, saved_path, biompin_fallback=biompin_code)))
 
 
 def cmd_csv(json_paths: list[str], output_dir: str) -> None:
     """Generate a byeye CSV by sending JSON files to the API's /biom/csv endpoint."""
-    os.makedirs(output_dir, exist_ok=True)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as e:
+        print(json.dumps({"error": True, "detail": f"Could not create output directory: {e}"}))
+        sys.exit(1)
 
     responses = []
     for p in json_paths:
@@ -579,8 +690,12 @@ def cmd_csv(json_paths: list[str], output_dir: str) -> None:
         sys.exit(1)
 
     out_path = os.path.join(output_dir, "biomapi_byeye.csv")
-    with open(out_path, "w", encoding="utf-8", newline="") as f:
-        f.write(result)
+    try:
+        with open(out_path, "w", encoding="utf-8", newline="") as f:
+            f.write(result)
+    except OSError as e:
+        print(json.dumps({"error": True, "detail": f"Could not save CSV: {e}"}))
+        sys.exit(1)
 
     print(json.dumps({"byeye": os.path.abspath(out_path)}))
 
@@ -625,7 +740,7 @@ Commands:
                  --clear-key         Remove only BIOMAPI_KEY from config
                  --clear-gemini-key  Remove only GEMINI_API_KEY from config
 
-  process      Extract biometry from PDF/PNG/JPG/JPEG/JSON (max 20MB each).
+  process      Extract biometry from PDF/PNG/JPG/JPEG/JSON (max 15 MiB each).
                Saves full JSON response next to each source file.
                BiomPIN is generated by default; use --no-pin to skip.
 
@@ -656,6 +771,8 @@ Environment variables:
 Config file (~/.config/biomapi/config):
   Simple KEY=VALUE pairs. Same keys as environment variables.
   Run `python biomapi.py configure` to create/update it automatically.
+  Prefer interactive configuration or environment variables so secrets do not
+  appear in shell history. POSIX config files are restricted to the current user.
   Priority: CLI flags > env vars > config file
 
 Access tiers:

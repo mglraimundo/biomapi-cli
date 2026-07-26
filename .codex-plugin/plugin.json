@@ -1,6 +1,6 @@
 {
   "name": "biomapi-cli",
-  "version": "2.0.24",
+  "version": "2.1.0",
   "description": "Biometry data extraction from optical biometry reports via biomapi.com.",
   "author": {
     "name": "mglraimundo",
@@ -19,6 +19,7 @@
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
     "websiteURL": "https://biomapi.com",
+    "privacyPolicyURL": "https://biomapi.com/docs/privacy/",
     "defaultPrompt": [
       "Process this biometry report with BiomAPI.",
       "Retrieve this BiomPIN with BiomAPI.",

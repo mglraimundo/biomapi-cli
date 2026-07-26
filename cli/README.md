@@ -2,7 +2,7 @@
 
 Standalone Python client for [BiomAPI](https://biomapi.com) — zero dependencies, pure stdlib, runs anywhere Python 3.11+ is installed.
 
-Processes optical biometry reports (PDF/images/JSON) via the BiomAPI cloud service and saves structured results as JSON files. No AI assistant required.
+Processes optical biometry reports (PDF/images/JSON) via the BiomAPI cloud service and saves structured results as JSON files. PDF and image extraction also sends the report to Google Gemini. No AI assistant required.
 
 ## Requirements
 
@@ -35,7 +35,7 @@ Run the configure command to save your API keys to a config file:
 python biomapi.py configure
 ```
 
-This prompts interactively. To set keys non-interactively (useful in scripts):
+This prompts interactively. Prefer interactive configuration or environment variables so secrets do not appear in shell history. To set keys non-interactively in a controlled script:
 
 ```
 python biomapi.py configure --key biom_your_key_here
@@ -98,6 +98,8 @@ The `configure` command saves keys to a plain-text file:
 - **Linux / macOS**: `~/.config/biomapi/config`
 - **Windows**: `C:\Users\<username>\.config\biomapi\config`
 
+On POSIX systems, the CLI writes the configuration directory with mode `0700` and the file with mode `0600`. On Windows, access follows the user profile's ACLs.
+
 Priority: CLI flags > environment variables > config file.
 
 ---
@@ -110,7 +112,7 @@ Priority: CLI flags > environment variables > config file.
 biomapi.py configure [--key <key>] [--gemini-key <key>] [--url <url>] [--escrs-url <url>] [--show] [--clear] [--clear-key] [--clear-gemini-key]
 ```
 
-Saves API keys to `~/.config/biomapi/config`. Works identically on Windows, macOS, and Linux.
+Saves API keys to `~/.config/biomapi/config`. The command is available on Windows, macOS, and Linux, with platform-appropriate local file permissions.
 
 ```bash
 python biomapi.py configure                           # interactive
@@ -130,11 +132,11 @@ python biomapi.py configure --clear-key               # remove only BIOMAPI_KEY
 biomapi.py process <file> [<file2> ...] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
 ```
 
-- Accepts PDF, PNG, JPG, JPEG, JSON (max 20 MB each)
-- Multiple files are processed concurrently
+- Accepts PDF, PNG, JPG, JPEG, JSON (max 15 MiB each)
+- Multiple files use at most four concurrent workers; stdout remains in input order
 - BiomPIN is generated **by default** — use `--no-pin` to skip
 
-**Results are always saved as JSON files** next to the source file, named `biomapi-{patient_id}-{device}.json`.
+**Results are always saved as JSON files** next to the source file, named `biomapi-{patient_id}-{device}.json`. If a filename already exists, the CLI adds `-2`, `-3`, and subsequent numeric suffixes instead of replacing it.
 
 **Stdout** prints a compact summary line per file (useful for scripting):
 
@@ -215,7 +217,7 @@ GEMINI_API_KEY=AIza_xxx python biomapi.py process scan.pdf
 biomapi.py retrieve <biompin_code_or_url>
 ```
 
-Fetches previously extracted data using a BiomPIN sharing code. You can also pass a full BiomAPI or ESCRS URL containing `#biomctx=...`; when present, the CLI restores patient name/ID into the saved JSON and generated links. Plain BiomPIN retrieval may return empty patient identifiers because BiomPIN storage intentionally redacts them.
+Fetches previously extracted data using a BiomPIN sharing code. You can also pass a full BiomAPI or ESCRS URL containing `#biomctx=...`; when present, the CLI restores patient name/ID into the saved JSON and generated links. The fragment is reversible, not encrypted, so treat the complete URL as patient-identifying data. Plain BiomPIN retrieval may return empty patient identifiers because BiomPIN storage intentionally redacts them.
 
 ```bash
 python biomapi.py retrieve lunar-rocket-731904
@@ -388,7 +390,7 @@ Errors are returned as JSON to stdout (not stderr), with `"error": true`:
 |--------|-------|-----|
 | 429 | Rate limit exceeded | Wait 24h or use `BIOMAPI_KEY` |
 | 400 | Invalid file format | Ensure file is PDF/PNG/JPG/JPEG/JSON |
-| 413 | File too large | Maximum 20 MB per file |
+| 413 | File too large | Maximum 15 MiB per file |
 | 503 | API temporarily overloaded | Retry after a short wait |
 | Connection failed | Cannot reach biomapi.com | Check internet access / firewall |
 

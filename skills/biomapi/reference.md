@@ -1,6 +1,16 @@
 # BiomAPI Data Reference
 
-Complete schema reference for BiomAPI JSON responses. Use this to interpret extraction results, validate values, and answer clinical questions about biometry data.
+Schema reference for BiomAPI JSON responses. Use it to render extraction results, validate response fields, and explain the data structure. Do not use it for diagnosis, treatment recommendations, or clinical decisions.
+
+## Contents
+
+- [Supported Devices](#supported-devices)
+- [Core Biometry Data](#core-biometry-data-data)
+- [Enum Values](#enum-values)
+- [Patient Data](#patient-data)
+- [Extra Data](#extra-data-extra_data)
+- [Metadata](#metadata-metadata)
+- [BiomPIN](#biompin)
 
 ## Supported Devices
 
@@ -49,19 +59,6 @@ All measurements are optional (nullable). A `null` value means the measurement w
 |-------|------|-------------|
 | `exam_date` | date | Biometry examination date in ISO format (YYYY-MM-DD), distinct from date of birth |
 
-### Typical Ranges (clinical context)
-
-These are NOT validation ranges — they're typical adult values for clinical context:
-
-| Measurement | Typical Range | Notes |
-|-------------|--------------|-------|
-| AL | 22.0–25.0 mm | <22 = short eye (hyperopic), >26 = long eye (myopic) |
-| ACD | 2.5–4.0 mm | Shallower in older patients |
-| K1/K2 | 40.0–47.0 D | Astigmatism = K2 - K1 |
-| WTW | 11.0–12.5 mm | Relevant for ICL/IOL sizing |
-| LT | 3.5–5.5 mm | Increases with age and cataract |
-| CCT | 500–570 um | Relevant for IOP correction |
-
 ### Enum Values
 
 **Lens Status**: `Phakic`, `Phakic IOL`, `Pseudophakic`, `Aphakic`
@@ -97,7 +94,7 @@ Present when the device supports posterior corneal measurements. Important for t
 | `PK2_magnitude` | float | D | 2.0–8.0 | Posterior steep keratometry |
 | `PK2_axis` | int | ° | 0–180 | Posterior steep axis |
 
-Posterior keratometry is measured per eye, same structure as anterior K values but with lower diopter range.
+Posterior keratometry is measured per eye and uses the same structural pattern as anterior keratometry.
 
 ### Notes
 

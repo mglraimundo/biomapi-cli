@@ -1,35 +1,37 @@
 ---
 name: biomapi
-description: Process optical biometry reports (PDF/images/JSON) using BiomAPI AI extraction at biomapi.com. Use when the user uploads or references a biometry PDF, image, or JSON and wants structured biometry data extracted, or when they mention a BiomPIN code (word-word-123456) to retrieve shared results. Returns patient info, a BiomPIN sharing link, and a preformed ESCRS IOL Calculator URL.
-allowed-tools: Bash, Read, Glob
+description: Process optical biometry reports (PDF/images/JSON), retrieve BiomPIN results, export BiomAPI CSV files, check usage or service status, and create prefilled ESCRS IOL Calculator links through biomapi.com. Use when the user provides a biometry report, mentions a BiomPIN code (word-word-123456), asks to use BiomAPI, or wants an ESCRS IOL Calculator link from a report.
 ---
 
 # BiomAPI - AI Biometry Extraction
 
 Extract structured biometry data from optical biometry device reports (PDF/images/JSON) using the BiomAPI service at `https://biomapi.com`.
 
-## When to Use This Skill
-
-- User uploads or references a PDF/image/JSON that is an optical biometry report (from devices like IOLMaster, Lenstar, Anterion, Pentacam, etc.)
-- User mentions a BiomPIN code (format: `word-word-123456`) to retrieve shared results
-- User asks to check BiomAPI status or usage
-- User asks for an ESCRS IOL calculation given a biometry PDF/image (see **ESCRS IOL Calculation Shortcut** below)
-
 ## Data Reference
 
-See [reference.md](reference.md) for the complete schema: all biometry fields with units and validation ranges, supported devices, enum values, posterior keratometry, and typical clinical ranges. Only load it when rendering a biometry table, checking validation ranges, or answering a clinical question — not on standard extractions.
+See [reference.md](reference.md) for the response schema, field units and validation ranges, supported devices, enum values, posterior keratometry, and metadata. Load it only when rendering a biometry table, checking schema constraints, or explaining a response field — not for standard extractions or clinical interpretation.
 
 ## Client Script
 
-The API client is at `scripts/biomapi.py` relative to this skill's directory. It requires only Python 3.10+ with zero external dependencies.
+The API client is `scripts/biomapi.py` relative to this `SKILL.md`. It requires Python 3.11+ and has zero external dependencies.
 
-Run it via:
+Resolve the script to an absolute path before invoking it; do not assume the current working directory is the skill directory. In the commands below, `<biomapi-script>` means that absolute path.
 
 ```bash
-python3 scripts/biomapi.py <command> [args]
+python3 <biomapi-script> <command> [args]
 ```
 
-If the relative path doesn't resolve, try `${CLAUDE_SKILL_DIR}/scripts/biomapi.py`.
+- Claude Code exposes the skill directory as `${CLAUDE_SKILL_DIR}`.
+- Codex exposes the selected `SKILL.md` path; resolve `scripts/biomapi.py` from its parent directory.
+- On Windows, use an available Python 3.11+ launcher and forward-slash paths.
+
+## Privacy and Safety
+
+- Pass source file paths directly to the script. Do not read the PDF, image, or JSON into the host assistant's context.
+- The host assistant does not inspect the source file, but the script uploads it to BiomAPI. BiomAPI and, for PDF/image extraction, Google Gemini process the report.
+- BiomAPI is not a medical device. Do not diagnose, recommend treatment, calculate clinical decisions, or interpret measurements unless the user separately requests general information. Tell users to verify extracted values against the original report.
+- The `#biomctx=...` URL fragment is reversible, not encrypted. It can contain the patient acronym and patient ID. It is not sent in a normal HTTP request, but anyone receiving the complete URL can decode it; handle that URL as patient-identifying data.
+- Never ask users to paste API keys into the conversation. Direct them to configure keys locally or use environment variables.
 
 ### Environment Variables
 
@@ -58,45 +60,43 @@ If a user reports a 429 rate limit error or asks how to get higher limits, help 
 1. **BIOMAPI_KEY** — for higher daily limits: obtained from the BiomAPI operator.
 2. **GEMINI_API_KEY** — for BYOK processing in the separate `biomai_byok` bucket using the user's own Gemini API key from [aistudio.google.com](https://aistudio.google.com).
 
-Use the `configure` command to save keys to the config file (works on Windows, macOS, Linux):
+Tell the user to run the interactive configuration locally. Do not run it with a secret supplied in chat:
 
 ```bash
-python3 scripts/biomapi.py configure --key biom_your_key_here
-python3 scripts/biomapi.py configure --gemini-key AIza_your_key_here
-python3 scripts/biomapi.py configure --show   # verify what's configured
+python3 <biomapi-script> configure
+python3 <biomapi-script> configure --show
 ```
 
-Keys can also be set via `--key`/`--gemini-key` CLI flags per-call, or environment variables.
+Keys can also be provided through environment variables. Command-line `--key` and `--gemini-key` flags remain available for controlled automation, but can be exposed through shell history or process listings.
 
 ## Commands
 
 ### Configure API keys
 
 ```bash
-python3 scripts/biomapi.py configure --key biom_abc123
-python3 scripts/biomapi.py configure --gemini-key AIza_xxx
-python3 scripts/biomapi.py configure --show
+python3 <biomapi-script> configure
+python3 <biomapi-script> configure --show
 ```
 
 ### Process a biometry file
 
 ```bash
-python3 scripts/biomapi.py process /path/to/report.pdf
+python3 <biomapi-script> process /path/to/report.pdf
 ```
 
 Multiple files in one call (processed concurrently inside the script):
 
 ```bash
-python3 scripts/biomapi.py process file1.pdf file2.pdf file3.pdf
+python3 <biomapi-script> process file1.pdf file2.pdf file3.pdf
 ```
 
-- Accepts: `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json` (max 20MB)
+- Accepts: `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json` (max 15 MiB each)
 - BiomPIN is generated **by default** — use `--no-pin` only if the user explicitly asks not to share
 
 ### Retrieve via BiomPIN
 
 ```bash
-python3 scripts/biomapi.py retrieve word-word-123456
+python3 <biomapi-script> retrieve word-word-123456
 ```
 
 The retrieve command also accepts a full BiomAPI or ESCRS URL containing `#biomctx=...`; use that form when available so patient name/ID can be restored locally after BiomPIN retrieval.
@@ -104,7 +104,7 @@ The retrieve command also accepts a full BiomAPI or ESCRS URL containing `#biomc
 ### Generate CSV export
 
 ```bash
-python3 scripts/biomapi.py csv file1.json [file2.json ...] [--output /path/to/dir]
+python3 <biomapi-script> csv file1.json [file2.json ...] [--output /path/to/dir]
 ```
 
 - Input: one or more `saved_json` paths (from `process` or `retrieve` output)
@@ -115,13 +115,13 @@ python3 scripts/biomapi.py csv file1.json [file2.json ...] [--output /path/to/di
 ### Check rate limit usage
 
 ```bash
-python3 scripts/biomapi.py usage
+python3 <biomapi-script> usage
 ```
 
 ### Check API status
 
 ```bash
-python3 scripts/biomapi.py status
+python3 <biomapi-script> status
 ```
 
 Returns lightweight API status and deployment metadata, including `db_id`.
@@ -155,7 +155,7 @@ The **full raw API response** (including all metadata, LLM metrics, timings) is 
 
 ### Single file
 
-**Default output** — show the compact info block only. Do NOT read `saved_json` or create any artifact.
+**Default output** — show the compact info block only. Do not read, attach, or transform `saved_json`.
 
 ```
 Patient: JD (ID: 12345)
@@ -172,7 +172,7 @@ Saved: /abs/path/to/biomapi-jd-iolmaster700.json
 Each line MUST be separated by a blank line for readability. Do not collapse them into a single block.
 
 - BiomPIN is generated **by default**; use `--no-pin` only if the user explicitly requests no BiomPIN
-- Use the `biomapi_url` and `escrs_url` fields exactly as returned. They may include a browser-only `#biomctx=...` fragment so patient name/ID survive opening in a new browser session without being sent to the server.
+- Use the `biomapi_url` and `escrs_url` fields exactly as returned. When they contain `#biomctx=...`, treat the complete URL as patient-identifying data.
 - If no BiomPIN: show patient line and Saved path only (no URLs)
 - No biometry table unless the user explicitly asks
 
@@ -181,12 +181,12 @@ Each line MUST be separated by a blank line for readability. Do not collapse the
 After processing all files, **automatically** run the `csv` command with all `saved_json` paths:
 
 ```bash
-python3 scripts/biomapi.py csv file1.json file2.json ... --output /path/to/dir
+python3 <biomapi-script> csv file1.json file2.json ... --output /path/to/dir
 ```
 
-Then create a **CSV artifact** from the generated `byeye` CSV file. Do NOT create individual JSON artifacts for each file.
+Then return the generated `byeye` CSV as a clickable file link or attachment supported by the host. Do not return individual JSON files unless requested.
 
-Show a compact summary listing all patients processed, then the CSV artifact.
+Show a compact summary listing all patients processed, then the CSV file.
 
 ### Biometry table (on request)
 
@@ -233,20 +233,10 @@ The script outputs JSON with `"error": true` on failure. Keep error messages bri
 - **429**: Rate limited (15/day public). Suggest setting `BIOMAPI_KEY` or `GEMINI_API_KEY` for higher limits.
 - **Connection failed**: Service may be temporarily unavailable.
 - **Unsupported file type**: Only `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json` supported.
-- **File too large**: Max 20MB.
+- **File too large**: Max 15 MiB.
 
 ## File Handling
 
-Pass source file paths directly to `biomapi.py process` — never use the `Read` tool on them. The script handles all I/O; the LLM never sees the source file contents. Do not read `saved_json` by default — just display the path. Only read it when the user explicitly asks for the biometry table.
+Pass source file paths directly to `biomapi.py process` — never use a file-reading tool on them. The script handles local I/O and sends the source to BiomAPI for processing. Do not read `saved_json` by default; display its path. Read it only when the user explicitly asks for the biometry table or a response-field explanation.
 
 For CSV export, use the `csv` command with the `saved_json` paths — never build CSV manually.
-
-## Multiple Files
-
-When multiple files are provided, pass all paths in a **single** `biomapi.py process` call — the script handles concurrency internally:
-
-```bash
-python3 scripts/biomapi.py process file1.pdf file2.pdf file3.pdf
-```
-
-The script outputs one JSON object per line, in input order. After all files are processed, **automatically** run the `csv` command with every `saved_json` path collected from the output, then create a CSV artifact. Do NOT read individual JSONs or create per-file JSON artifacts.
