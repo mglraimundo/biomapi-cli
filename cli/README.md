@@ -194,7 +194,7 @@ GEMINI_API_KEY=AIza_xxx python biomapi.py process scan.pdf
   "metadata": {
     "extraction_method": "BiomAI",
     "extraction": {
-      "model": "gemini-3.6-flash",
+      "model": "gemini-3.7-flash",
       "processing_time_ms": 3821
     }
   },
@@ -320,7 +320,7 @@ python biomapi.py status
 
 **Stdout:**
 ```json
-{"status": "ok", "db_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "gemini_llm": "gemini-3.6-flash", "environment": "production", "app_version": "0.9.8.1", "schema_version": "1.0.0"}
+{"status": "ok", "db_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "gemini_llm": "gemini-3.7-flash", "environment": "production", "app_version": "0.9.8.1", "schema_version": "1.0.0"}
 ```
 
 For active Gemini/database health checks, call `GET /api/v1/health`.
