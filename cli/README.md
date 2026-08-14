@@ -61,9 +61,9 @@ python biomapi.py configure --clear             # remove config file entirely
 
 | `BIOMAPI_KEY` | `GEMINI_API_KEY` | `process` limit | `retrieve` limit |
 |---|---|---|---|
-| — | — | 15/day per IP | 1000/day per IP |
+| — | — | Public `biomai` quota | Public `retrieve` quota |
 | ✓ | — | Custom quota (per user) | Custom quota (per user) |
-| — | ✓ | `biomai_byok` bucket (your Gemini quota) | 1000/day per IP |
+| — | ✓ | `biomai_byok` bucket (your Gemini quota) | Public `retrieve` quota |
 | ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
 
 ### Alternative: environment variables
@@ -129,12 +129,13 @@ python biomapi.py configure --clear-key               # remove only BIOMAPI_KEY
 ### `process` — Extract biometry from a file
 
 ```
-biomapi.py process <file> [<file2> ...] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
+biomapi.py process <file> [<file2> ...] [--service-tier standard|slow] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
 ```
 
-- Accepts PDF, PNG, JPG, JPEG, JSON (max 15 MiB each)
+- Accepts PDF, PNG, JPG, JPEG, and JSON; the server enforces its configured per-file upload limit
 - Multiple files use at most four concurrent workers; stdout remains in input order
 - BiomPIN is generated **by default** — use `--no-pin` to skip
+- `--service-tier standard` costs 1 BiomAI credit per PDF/image; `slow` costs 0.5 and may take substantially longer
 
 **Results are always saved as JSON files** next to the source file, named `biomapi-{patient_id}-{device}.json`. If a filename already exists, the CLI adds `-2`, `-3`, and subsequent numeric suffixes instead of replacing it.
 
@@ -152,6 +153,9 @@ python biomapi.py process patient_report.pdf
 
 # Multiple files, skip BiomPIN
 python biomapi.py process *.pdf --no-pin
+
+# Quota-efficient, higher-latency processing
+python biomapi.py process *.pdf --service-tier slow
 
 # With BiomAPI key (higher limits)
 BIOMAPI_KEY=biom_abc123 python biomapi.py process scan.pdf
@@ -233,27 +237,27 @@ BiomPINs expire after 31 days (744 hours) by default (configurable per instance)
 
 ---
 
-### `csv` — Export JSON results to CSV
+### `export` — Export JSON results to CSV, XLSX, and JSON
 
 ```
-biomapi.py csv <file.json> [<file2.json> ...] [--output <dir>]
+biomapi.py export <file.json> [<file2.json> ...] [--output <dir>]
 ```
 
-Sends one or more saved BiomAPI JSON files to the API for server-side CSV generation. Each report contributes two rows (right eye, left eye). Requires network access.
+Sends one or more saved BiomAPI JSON files to the API for server-side export generation. The ZIP contains combined by-eye CSV and XLSX files plus one JSON file per report. Each report contributes two spreadsheet rows (right eye, left eye). Requires network access.
 
 ```bash
 # Export a single file
-python biomapi.py csv biomapi-12345-iolmaster700.json
+python biomapi.py export biomapi-12345-iolmaster700.json
 
 # Export multiple files to a specific folder
-python biomapi.py csv *.json --output ./exports
+python biomapi.py export *.json --output ./exports
 ```
 
-**Output:** `biomapi_byeye.csv` in the current directory (or `--output` dir).
+**Output:** `biomapi_export.zip` in the current directory (or `--output` dir).
 
 **Stdout:**
 ```json
-{"byeye": "/abs/path/biomapi_byeye.csv"}
+{"export": "/abs/path/biomapi_export.zip"}
 ```
 
 **CSV columns:**
@@ -340,10 +344,10 @@ done
 # Batch process and collect summaries
 python biomapi.py process /path/to/reports/*.pdf > results.jsonl
 
-# Process then export to CSV
+# Process then export to CSV, XLSX, and JSON
 DIR=/path/to/reports
 python biomapi.py process "$DIR"/*.pdf
-python biomapi.py csv "$DIR"/biomapi-*.json --output "$DIR/exports"
+python biomapi.py export "$DIR"/biomapi-*.json --output "$DIR/exports"
 
 # Exit code 1 if any file fails
 python biomapi.py process *.pdf || echo "One or more files failed"
@@ -363,9 +367,9 @@ Get-ChildItem -Path C:\reports -Filter *.pdf | ForEach-Object {
 # Batch process and collect summaries
 python biomapi.py process C:\reports\*.pdf > results.jsonl
 
-# Process then export to CSV
+# Process then export to CSV, XLSX, and JSON
 python biomapi.py process C:\reports\*.pdf
-python biomapi.py csv C:\reports\biomapi-*.json --output C:\reports\exports
+python biomapi.py export C:\reports\biomapi-*.json --output C:\reports\exports
 
 # Check for errors
 python biomapi.py process *.pdf
@@ -390,7 +394,7 @@ Errors are returned as JSON to stdout (not stderr), with `"error": true`:
 |--------|-------|-----|
 | 429 | Rate limit exceeded | Wait 24h or use `BIOMAPI_KEY` |
 | 400 | Invalid file format | Ensure file is PDF/PNG/JPG/JPEG/JSON |
-| 413 | File too large | Maximum 15 MiB per file |
+| 413 | File too large | Use the maximum reported by the server |
 | 503 | API temporarily overloaded | Retry after a short wait |
 | Connection failed | Cannot reach biomapi.com | Check internet access / firewall |
 

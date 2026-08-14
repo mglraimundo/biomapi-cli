@@ -8,9 +8,9 @@ Codex plugin marketplaces.
 
 Usage:
     biomapi.py configure [--key <key>] [--gemini-key <key>] [--url <url>] [--escrs-url <url>] [--show] [--clear]
-    biomapi.py process <file_path> [<file_path2> ...] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
+    biomapi.py process <file_path> [<file_path2> ...] [--service-tier standard|slow] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
     biomapi.py retrieve <biompin_code_or_url>
-    biomapi.py csv <file.json> [<file2.json> ...] [--output <dir>]
+    biomapi.py export <file.json> [<file2.json> ...] [--output <dir>]
     biomapi.py usage
     biomapi.py status
     biomapi.py --help
@@ -22,8 +22,8 @@ Stdout (process/retrieve):
     The full raw API response is always saved to disk at saved_json.
     On error: {"error": true, "detail": "...", ...}
 
-Stdout (csv):
-    {"byeye": "/abs/path/biomapi_byeye.csv"}
+Stdout (export):
+    {"export": "/abs/path/biomapi_export.zip"}
 
 Environment:
     BIOMAPI_KEY      - Optional API key for higher rate limits
@@ -62,7 +62,6 @@ if sys.version_info < MIN_PYTHON:
     raise SystemExit(1)
 
 
-MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
 MAX_CONCURRENT_FILES = 4
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".json"}
 
@@ -276,7 +275,7 @@ def _compact_summary(result: dict, saved_path: str, biompin_fallback: str | None
     return summary
 
 
-def _build_multipart(file_path: str, generate_pin: bool) -> tuple[bytes, str]:
+def _build_multipart(file_path: str, generate_pin: bool, service_tier: str) -> tuple[bytes, str]:
     """Build a multipart/form-data body using only stdlib."""
     boundary = f"----BiomAPI{uuid.uuid4().hex}"
     filename = os.path.basename(file_path)
@@ -305,16 +304,28 @@ def _build_multipart(file_path: str, generate_pin: bool) -> tuple[bytes, str]:
         f'Content-Disposition: form-data; name="biompin"\r\n\r\n'
         f"{'true' if generate_pin else 'false'}\r\n"
     ).encode("utf-8")
+    service_tier_part = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="service_tier"\r\n\r\n'
+        f"{service_tier}\r\n"
+    ).encode("utf-8")
     closing_boundary = f"--{boundary}--\r\n".encode("utf-8")
 
     return (
-        b"".join((file_header, file_data, b"\r\n", biompin_part, closing_boundary)),
+        b"".join((file_header, file_data, b"\r\n", biompin_part, service_tier_part, closing_boundary)),
         f"multipart/form-data; boundary={boundary}",
     )
 
 
-def _request(method: str, url: str, body: bytes | None = None, content_type: str | None = None, raw: bool = False) -> dict | str:
-    """Make an HTTP request. Returns parsed JSON dict, or raw string if raw=True. Returns error dict on failure."""
+def _request(
+    method: str,
+    url: str,
+    body: bytes | None = None,
+    content_type: str | None = None,
+    binary: bool = False,
+    timeout_seconds: float | None = 120,
+) -> dict | bytes:
+    """Make an HTTP request. Returns parsed JSON or raw bytes for binary downloads."""
     headers = {}
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
@@ -326,11 +337,12 @@ def _request(method: str, url: str, body: bytes | None = None, content_type: str
     req = Request(url, data=body, headers=headers, method=method)
 
     try:
-        with urlopen(req, timeout=120) as resp:
-            response_body = resp.read().decode("utf-8")
-            if raw:
+        with urlopen(req, timeout=timeout_seconds) as resp:
+            response_body = resp.read()
+            if binary:
                 return response_body
-            parsed = json.loads(response_body)
+            response_text = response_body.decode("utf-8")
+            parsed = json.loads(response_text)
             if not isinstance(parsed, dict):
                 return {"error": True, "detail": "Invalid response from BiomAPI: expected a JSON object."}
             return parsed
@@ -351,8 +363,7 @@ def _request(method: str, url: str, body: bytes | None = None, content_type: str
             detail = error_body
         return {"error": True, "status": e.code, "detail": detail}
     except (UnicodeDecodeError, json.JSONDecodeError):
-        expected = "text" if raw else "a JSON object"
-        return {"error": True, "detail": f"Invalid response from BiomAPI: expected UTF-8 {expected}."}
+        return {"error": True, "detail": "Invalid response from BiomAPI: expected a UTF-8 JSON object."}
     except URLError as e:
         return {"error": True, "detail": f"Connection failed: {e.reason}"}
     except TimeoutError:
@@ -420,7 +431,7 @@ def _save_result(result: dict, source_path: str) -> str:
     raise OSError("Could not save result JSON (" + "; ".join(errors) + ")")
 
 
-def _process_one(file_path: str, generate_pin: bool) -> dict:
+def _process_one(file_path: str, generate_pin: bool, service_tier: str) -> dict:
     """Validate and upload a single biometry file.
 
     Returns a compact summary dict (not the full API response) so the LLM
@@ -440,22 +451,16 @@ def _process_one(file_path: str, generate_pin: bool) -> dict:
         }
 
     try:
-        file_size_bytes = os.path.getsize(file_path)
-    except OSError as e:
-        return {"error": True, "file": file_path, "detail": f"Could not inspect file: {e}"}
-    if file_size_bytes > MAX_FILE_SIZE_BYTES:
-        file_size_mib = file_size_bytes / (1024 * 1024)
-        return {
-            "error": True,
-            "file": file_path,
-            "detail": f"File too large ({file_size_mib:.1f} MiB). Maximum: 15 MiB",
-        }
-
-    try:
-        body, content_type = _build_multipart(file_path, generate_pin)
+        body, content_type = _build_multipart(file_path, generate_pin, service_tier)
     except OSError as e:
         return {"error": True, "file": file_path, "detail": f"Could not read file: {e}"}
-    result = _request("POST", f"{BASE_URL.rstrip('/')}/api/v1/biom/process", body=body, content_type=content_type)
+    result = _request(
+        "POST",
+        f"{BASE_URL.rstrip('/')}/api/v1/biom/process",
+        body=body,
+        content_type=content_type,
+        timeout_seconds=None,
+    )
 
     if result.get("error"):
         return result
@@ -615,10 +620,14 @@ def cmd_configure(args: list[str]) -> None:
     print(f"\nSaved to {saved}", file=sys.stderr)
 
 
-def cmd_process(file_paths: list[str], generate_pin: bool = True) -> None:
+def cmd_process(
+    file_paths: list[str],
+    generate_pin: bool = True,
+    service_tier: str = "standard",
+) -> None:
     """Upload one or more biometry files for AI extraction, concurrently."""
     if len(file_paths) == 1:
-        result = _process_one(file_paths[0], generate_pin)
+        result = _process_one(file_paths[0], generate_pin, service_tier)
         print(json.dumps(result))
         if result.get("error"):
             sys.exit(1)
@@ -626,7 +635,10 @@ def cmd_process(file_paths: list[str], generate_pin: bool = True) -> None:
 
     results = [None] * len(file_paths)
     with ThreadPoolExecutor(max_workers=min(len(file_paths), MAX_CONCURRENT_FILES)) as executor:
-        futures = {executor.submit(_process_one, fp, generate_pin): i for i, fp in enumerate(file_paths)}
+        futures = {
+            executor.submit(_process_one, fp, generate_pin, service_tier): i
+            for i, fp in enumerate(file_paths)
+        }
         for future in as_completed(futures):
             index = futures[future]
             try:
@@ -664,8 +676,8 @@ def cmd_retrieve(biompin_input: str) -> None:
     print(json.dumps(_compact_summary(result, saved_path, biompin_fallback=biompin_code)))
 
 
-def cmd_csv(json_paths: list[str], output_dir: str) -> None:
-    """Generate a byeye CSV by sending JSON files to the API's /biom/csv endpoint."""
+def cmd_export(json_paths: list[str], output_dir: str) -> None:
+    """Generate a CSV/XLSX/JSON ZIP by sending saved responses to /biom/export."""
     try:
         os.makedirs(output_dir, exist_ok=True)
     except OSError as e:
@@ -682,22 +694,31 @@ def cmd_csv(json_paths: list[str], output_dir: str) -> None:
             print(json.dumps({"error": True, "detail": f"Could not read {p}: {e}"}))
             sys.exit(1)
 
-    payload = json.dumps({"responses": responses}).encode("utf-8")
-    result = _request("POST", f"{BASE_URL.rstrip('/')}/api/v1/biom/csv", body=payload, content_type="application/json", raw=True)
+    payload = json.dumps({
+        "responses": responses,
+        "formats": ["csv", "xlsx", "json"],
+    }).encode("utf-8")
+    result = _request(
+        "POST",
+        f"{BASE_URL.rstrip('/')}/api/v1/biom/export",
+        body=payload,
+        content_type="application/json",
+        binary=True,
+    )
 
     if isinstance(result, dict) and result.get("error"):
         print(json.dumps(result))
         sys.exit(1)
 
-    out_path = os.path.join(output_dir, "biomapi_byeye.csv")
+    out_path = os.path.join(output_dir, "biomapi_export.zip")
     try:
-        with open(out_path, "w", encoding="utf-8", newline="") as f:
+        with open(out_path, "wb") as f:
             f.write(result)
     except OSError as e:
-        print(json.dumps({"error": True, "detail": f"Could not save CSV: {e}"}))
+        print(json.dumps({"error": True, "detail": f"Could not save export: {e}"}))
         sys.exit(1)
 
-    print(json.dumps({"byeye": os.path.abspath(out_path)}))
+    print(json.dumps({"export": os.path.abspath(out_path)}))
 
 
 def cmd_usage() -> None:
@@ -721,9 +742,9 @@ BiomAPI CLI — zero-dependency Python client for BiomAPI biometry extraction.
 
 Usage:
   biomapi.py configure                     [--key <key>] [--gemini-key <key>] [--url <url>] [--escrs-url <url>] [--show] [--clear]
-  biomapi.py process <file> [<file2> ...]  [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
+  biomapi.py process <file> [<file2> ...]  [--service-tier standard|slow] [--no-pin] [--key <key>] [--gemini-key <key>] [--escrs-url <url>]
   biomapi.py retrieve <biompin_or_url>     [--key <key>] [--escrs-url <url>]
-  biomapi.py csv <file.json> [<file2.json> ...] [--output <dir>]
+  biomapi.py export <file.json> [<file2.json> ...] [--output <dir>]
   biomapi.py usage                         [--key <key>]
   biomapi.py status
   biomapi.py --help
@@ -740,15 +761,17 @@ Commands:
                  --clear-key         Remove only BIOMAPI_KEY from config
                  --clear-gemini-key  Remove only GEMINI_API_KEY from config
 
-  process      Extract biometry from PDF/PNG/JPG/JPEG/JSON (max 15 MiB each).
+  process      Extract biometry from PDF/PNG/JPG/JPEG/JSON.
+               The server enforces its configured per-file upload limit.
                Saves full JSON response next to each source file.
                BiomPIN is generated by default; use --no-pin to skip.
+               Standard costs 1 BiomAI credit; Slow costs 0.5 and may take longer.
 
   retrieve     Fetch previously extracted data using a BiomPIN code.
                Saves full JSON to the current directory.
 
-  csv          Export saved JSON results to a by-eye CSV via the API.
-               Requires network access. Output: biomapi_byeye.csv.
+  export       Export saved JSON results to CSV, XLSX, and JSON files via the API.
+               Requires network access. Output: biomapi_export.zip.
 
   usage        Show current rate-limit usage for your key or public IP.
 
@@ -756,6 +779,7 @@ Commands:
 
 Options:
   --no-pin          Skip BiomPIN generation on process (default: generate)
+  --service-tier    BiomAPI tier for PDF/images: standard (default) or slow
   --key <key>       Override BIOMAPI_KEY (higher daily limits)
   --gemini-key <k>  Override GEMINI_API_KEY (BYOK — separate biomai_byok bucket)
   --escrs-url <url> Override ESCRS_IOL_CALCULATOR_URL for generated links
@@ -776,7 +800,7 @@ Config file (~/.config/biomapi/config):
   Priority: CLI flags > env vars > config file
 
 Access tiers:
-  No key             15 process / 1000 retrieve per day (per IP)
+  No key             Deployment-configured public quotas (per IP)
   BIOMAPI_KEY        Custom quota per user
   GEMINI_API_KEY     biomai_byok bucket (uses your Gemini quota)
 
@@ -785,9 +809,10 @@ Examples:
   python biomapi.py configure --key biom_abc123   # set key directly
   python biomapi.py configure --show              # view current config
   python biomapi.py process report.pdf
+  python biomapi.py process reports/*.pdf --service-tier slow
   python biomapi.py process *.pdf --no-pin
   python biomapi.py retrieve lunar-rocket-731904
-  python biomapi.py csv biomapi-*.json --output ./exports
+  python biomapi.py export biomapi-*.json --output ./exports
   python biomapi.py usage
   python biomapi.py status
 """
@@ -826,19 +851,33 @@ def main() -> None:
     args = filtered
 
     if not args:
-        print("Usage: biomapi.py <configure|process|retrieve|csv|usage|status> [args]", file=sys.stderr)
+        print("Usage: biomapi.py <configure|process|retrieve|export|usage|status> [args]", file=sys.stderr)
         sys.exit(1)
 
     command = args[0]
 
     if command == "process":
         if len(args) < 2:
-            print("Usage: biomapi.py process <file_path> [<file_path2> ...] [--no-pin]", file=sys.stderr)
+            print("Usage: biomapi.py process <file_path> [<file_path2> ...] [--service-tier standard|slow] [--no-pin]", file=sys.stderr)
             sys.exit(1)
         rest = args[1:]
         generate_pin = "--no-pin" not in rest
+        service_tier = "standard"
+        if "--service-tier" in rest:
+            idx = rest.index("--service-tier")
+            if idx + 1 >= len(rest):
+                print("Error: --service-tier requires standard or slow", file=sys.stderr)
+                sys.exit(1)
+            service_tier = rest[idx + 1].lower()
+            if service_tier not in {"standard", "slow"}:
+                print("Error: --service-tier must be standard or slow", file=sys.stderr)
+                sys.exit(1)
+            rest = rest[:idx] + rest[idx + 2:]
         file_paths = [a for a in rest if a != "--no-pin"]
-        cmd_process(file_paths, generate_pin)
+        if not file_paths:
+            print("Error: no files specified", file=sys.stderr)
+            sys.exit(1)
+        cmd_process(file_paths, generate_pin, service_tier)
 
     elif command == "retrieve":
         if len(args) < 2:
@@ -846,9 +885,9 @@ def main() -> None:
             sys.exit(1)
         cmd_retrieve(args[1])
 
-    elif command == "csv":
+    elif command == "export":
         if len(args) < 2:
-            print("Usage: biomapi.py csv <file.json> [<file2.json> ...] [--output <dir>]", file=sys.stderr)
+            print("Usage: biomapi.py export <file.json> [<file2.json> ...] [--output <dir>]", file=sys.stderr)
             sys.exit(1)
         rest = args[1:]
         output_dir = os.getcwd()
@@ -863,7 +902,7 @@ def main() -> None:
         if not json_paths:
             print("Error: no JSON files specified", file=sys.stderr)
             sys.exit(1)
-        cmd_csv(json_paths, output_dir)
+        cmd_export(json_paths, output_dir)
 
     elif command == "usage":
         cmd_usage()
@@ -873,7 +912,7 @@ def main() -> None:
 
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Commands: configure, process, retrieve, csv, usage, status", file=sys.stderr)
+        print("Commands: configure, process, retrieve, export, usage, status", file=sys.stderr)
         sys.exit(1)
 
 

@@ -42,15 +42,15 @@ python3 <biomapi-script> <command> [args]
 | `BIOMAPI_KEY` | No | *(none)* | API key for higher rate limits |
 | `GEMINI_API_KEY` | No | *(none)* | Your own Gemini API key (BYOK — uses the separate `biomai_byok` bucket) |
 
-Public access (no key) is rate-limited to 15 extractions/day per IP.
+Public access without a key uses the deployment-configured per-IP quotas. Standard PDF/image processing costs 1 credit and Slow costs 0.5. Use the `usage` command for the limits that apply to the caller.
 
 **Access tiers:**
 
 | `BIOMAPI_KEY` | `GEMINI_API_KEY` | `process` limit | `retrieve` limit |
 |---|---|---|---|
-| — | — | 15/day per IP | 1000/day per IP |
+| — | — | Public `biomai` quota | Public `retrieve` quota |
 | ✓ | — | Custom quota (per user) | Custom quota (per user) |
-| — | ✓ | `biomai_byok` bucket (your Gemini quota) | 1000/day per IP |
+| — | ✓ | `biomai_byok` bucket (your Gemini quota) | Public `retrieve` quota |
 | ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
 
 ### Helping Users Configure Keys
@@ -88,10 +88,12 @@ Multiple files in one call (processed concurrently inside the script):
 
 ```bash
 python3 <biomapi-script> process file1.pdf file2.pdf file3.pdf
+python3 <biomapi-script> process file1.pdf file2.pdf --service-tier slow
 ```
 
-- Accepts: `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json` (max 15 MiB each)
+- Accepts: `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json`; the server enforces its configured per-file upload limit
 - BiomPIN is generated **by default** — use `--no-pin` only if the user explicitly asks not to share
+- `--service-tier standard|slow` applies to PDF/images. Standard costs 1 BiomAI credit; Slow costs 0.5 and may take substantially longer. Use Standard unless the user requests Slow or prioritizes quota efficiency over latency.
 
 ### Retrieve via BiomPIN
 
@@ -101,16 +103,17 @@ python3 <biomapi-script> retrieve word-word-123456
 
 The retrieve command also accepts a full BiomAPI or ESCRS URL containing `#biomctx=...`; use that form when available so patient name/ID can be restored locally after BiomPIN retrieval.
 
-### Generate CSV export
+### Generate export archive
 
 ```bash
-python3 <biomapi-script> csv file1.json [file2.json ...] [--output /path/to/dir]
+python3 <biomapi-script> export file1.json [file2.json ...] [--output /path/to/dir]
 ```
 
 - Input: one or more `saved_json` paths (from `process` or `retrieve` output)
-- `--output`: directory for the CSV file (default: current working directory)
-- Output: `{"byeye": "/abs/path/biomapi_byeye.csv"}`
-- **Requires network access** — CSV is generated server-side
+- `--output`: directory for the ZIP file (default: current working directory)
+- Output: `{"export": "/abs/path/biomapi_export.zip"}`
+- The ZIP contains combined CSV and XLSX spreadsheets plus one JSON file per response
+- **Requires network access** — the archive is generated server-side
 
 ### Check rate limit usage
 
@@ -178,15 +181,15 @@ Each line MUST be separated by a blank line for readability. Do not collapse the
 
 ### Multiple files
 
-After processing all files, **automatically** run the `csv` command with all `saved_json` paths:
+After processing all files, **automatically** run the `export` command with all `saved_json` paths:
 
 ```bash
-python3 <biomapi-script> csv file1.json file2.json ... --output /path/to/dir
+python3 <biomapi-script> export file1.json file2.json ... --output /path/to/dir
 ```
 
-Then return the generated `byeye` CSV as a clickable file link or attachment supported by the host. Do not return individual JSON files unless requested.
+Then return the generated export ZIP as a clickable file link or attachment supported by the host. Do not return separate files unless requested.
 
-Show a compact summary listing all patients processed, then the CSV file.
+Show a compact summary listing all patients processed, then the export ZIP.
 
 ### Biometry table (on request)
 
@@ -230,13 +233,13 @@ When the user asks for an **ESCRS IOL calculation** (or similar phrasing like "c
 ## Error Handling
 
 The script outputs JSON with `"error": true` on failure. Keep error messages brief:
-- **429**: Rate limited (15/day public). Suggest setting `BIOMAPI_KEY` or `GEMINI_API_KEY` for higher limits.
+- **429**: Credit limit reached. Suggest Slow, `BIOMAPI_KEY`, or `GEMINI_API_KEY` as appropriate, and use the `usage` command to inspect the applicable quota.
 - **Connection failed**: Service may be temporarily unavailable.
 - **Unsupported file type**: Only `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json` supported.
-- **File too large**: Max 15 MiB.
+- **File too large**: The server response reports the deployment's configured maximum.
 
 ## File Handling
 
 Pass source file paths directly to `biomapi.py process` — never use a file-reading tool on them. The script handles local I/O and sends the source to BiomAPI for processing. Do not read `saved_json` by default; display its path. Read it only when the user explicitly asks for the biometry table or a response-field explanation.
 
-For CSV export, use the `csv` command with the `saved_json` paths — never build CSV manually.
+For export, use the `export` command with the `saved_json` paths. Do not build the CSV or XLSX manually.

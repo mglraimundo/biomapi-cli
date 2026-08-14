@@ -4,7 +4,7 @@ Biometry data extraction from optical biometry reports (PDF/images/JSON) via [bi
 
 Upload a biometry PDF or image and get structured measurements (AL, K1, K2, ACD, CCT, and more) returned as a clinical biometry table.
 
-The CLI requires Python 3.11+ and accepts PDF, PNG, JPG, JPEG, and JSON inputs up to 15 MiB each.
+The CLI requires Python 3.11+ and accepts PDF, PNG, JPG, JPEG, and JSON inputs. The server enforces its configured per-file upload limit.
 
 ## Supported Devices
 
@@ -71,6 +71,8 @@ ESCRS IOL Calculator: https://iolcalculator.escrs.org?biompin=lunar-rocket-73190
 
 Multiple files use up to four workers, while summaries remain in input order. See [`cli/README.md`](cli/README.md) for the full reference.
 
+Use `--service-tier slow` for quota-efficient, non-urgent PDF/image processing. Standard costs 1 BiomAI credit per file; Slow costs 0.5 and may take substantially longer.
+
 ### Extracted Data
 
 **Core measurements** (per eye): Axial Length, ACD, K1/K2 with axes, WTW, Lens Thickness, CCT, lens status, post-refractive history, keratometric index.
@@ -95,13 +97,13 @@ Retrieve shared data:
 python biomapi.py retrieve lunar-rocket-731904
 ```
 
-Generate a by-eye CSV from saved BiomAPI JSON responses:
+Export saved BiomAPI JSON responses as a ZIP containing CSV, XLSX, and JSON files:
 
 ```bash
-python biomapi.py csv result-one.json result-two.json --output ./exports
+python biomapi.py export result-one.json result-two.json --output ./exports
 ```
 
-The supported commands are `configure`, `process`, `retrieve`, `csv`, `usage`,
+The supported commands are `configure`, `process`, `retrieve`, `export`, `usage`,
 and `status`. Saved extraction and retrieval responses use collision-safe
 filenames: an existing file is preserved and the new file receives `-2`, `-3`,
 or the next available numeric suffix.
@@ -140,9 +142,9 @@ instructions.
 
 | `BIOMAPI_KEY` | `GEMINI_API_KEY` | `process` limit | `retrieve` limit |
 |---|---|---|---|
-| — | — | 15/day per IP | 1000/day per IP |
+| — | — | Public `biomai` quota | Public `retrieve` quota |
 | ✓ | — | Custom quota (per user) | Custom quota (per user) |
-| — | ✓ | `biomai_byok` bucket (your Gemini quota) | 1000/day per IP |
+| — | ✓ | `biomai_byok` bucket (your Gemini quota) | Public `retrieve` quota |
 | ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
 
 ## How it works
