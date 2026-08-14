@@ -271,24 +271,24 @@ python biomapi.py export *.json --output ./exports
 | `biometer_manufacturer` | Manufacturer (e.g. Zeiss) |
 | `patient_name` | Patient name / acronym |
 | `patient_id` | Patient ID |
-| `patient_date_of_birth` | Date of birth (ISO format) |
+| `patient_dob` | Date of birth (ISO format) |
 | `patient_gender` | Gender (`Male`/`Female`/`Other`/`Unknown`) |
-| `AL` | Axial length (mm) |
-| `ACD` | Anterior chamber depth (mm) |
-| `K1_magnitude` | Flattest keratometry (D) |
-| `K1_axis` | K1 axis (°) |
-| `K2_magnitude` | Steepest keratometry (D) |
-| `K2_axis` | K2 axis (°) |
-| `WTW` | White-to-white corneal diameter (mm) |
-| `LT` | Lens thickness (mm) |
-| `CCT` | Central corneal thickness (μm) |
+| `al` | Axial length (mm) |
+| `acd` | Anterior chamber depth (mm) |
+| `k1` | Flattest keratometry (D) |
+| `k1_axis` | K1 axis (°) |
+| `k2` | Steepest keratometry (D) |
+| `k2_axis` | K2 axis (°) |
+| `wtw` | White-to-white corneal diameter (mm) |
+| `lt` | Lens thickness (mm) |
+| `cct` | Central corneal thickness (μm) |
 | `lens_status` | `Phakic`, `Pseudophakic`, `Aphakic`, or `Phakic IOL` |
 | `post_refractive` | `None`, `LASIK`, `PRK`, `RK`, or `Other` |
 | `keratometric_index` | Keratometric index used (e.g. 1.3375) |
-| `PK1_magnitude` | Posterior K1 power (D), if available |
-| `PK1_axis` | Posterior K1 axis (°), if available |
-| `PK2_magnitude` | Posterior K2 power (D), if available |
-| `PK2_axis` | Posterior K2 axis (°), if available |
+| `pk1` | Posterior K1 power (D), if available |
+| `pk1_axis` | Posterior K1 axis (°), if available |
+| `pk2` | Posterior K2 power (D), if available |
+| `pk2_axis` | Posterior K2 axis (°), if available |
 | `pk_device_name` | Device used for posterior keratometry |
 | `extraction_timestamp` | ISO timestamp of extraction |
 | `biompin` | BiomPIN code (if generated) |
