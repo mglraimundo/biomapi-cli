@@ -44,7 +44,7 @@ PK Support = device can provide posterior keratometry measurements.
 | `K1_axis` | int | ° | 0–180 | Flat keratometry axis |
 | `K2_magnitude` | float | D | 20.0–99.0 | Steep keratometry power |
 | `K2_axis` | int | ° | 0–180 | Steep keratometry axis |
-| `WTW` | float | mm | 7.0–15.0 | White-to-White corneal diameter |
+| `WTW` | float | mm | 7.0–17.0 | White-to-White corneal diameter |
 | `LT` | float | mm | 0.1–7.0 | Lens Thickness |
 | `CCT` | int | um | 200–900 | Central Corneal Thickness |
 | `lens_status` | enum | — | see below | Current lens status |
