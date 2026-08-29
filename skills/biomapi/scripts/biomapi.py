@@ -326,7 +326,7 @@ def _request(
     timeout_seconds: float | None = 120,
 ) -> dict | bytes:
     """Make an HTTP request. Returns parsed JSON or raw bytes for binary downloads."""
-    headers = {}
+    headers = {"X-BiomAPI-Integrator-ID": "cli"}
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
     if GEMINI_API_KEY:
