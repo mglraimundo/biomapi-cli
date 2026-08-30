@@ -47,9 +47,16 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import (
+    parse_qs,
+    parse_qsl,
+    quote,
+    unquote,
+    urlencode,
+    urlsplit,
+    urlunsplit,
+)
 from urllib.request import Request, urlopen
-
 
 MIN_PYTHON = (3, 11)
 if sys.version_info < MIN_PYTHON:
@@ -128,7 +135,7 @@ try:
     _config = _load_config()
 except OSError as e:
     print(json.dumps({"error": True, "detail": f"Could not read config file: {e}"}))
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 API_KEY = os.environ.get("BIOMAPI_KEY") or _config.get("BIOMAPI_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or _config.get("GEMINI_API_KEY", "")
 BASE_URL = os.environ.get("BIOMAPI_URL") or _config.get("BIOMAPI_URL", "https://biomapi.com")
@@ -298,18 +305,18 @@ def _build_multipart(file_path: str, generate_pin: bool, service_tier: str) -> t
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
         f"Content-Type: {content_type}\r\n\r\n"
-    ).encode("utf-8")
+    ).encode()
     biompin_part = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="biompin"\r\n\r\n'
         f"{'true' if generate_pin else 'false'}\r\n"
-    ).encode("utf-8")
+    ).encode()
     service_tier_part = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="service_tier"\r\n\r\n'
         f"{service_tier}\r\n"
-    ).encode("utf-8")
-    closing_boundary = f"--{boundary}--\r\n".encode("utf-8")
+    ).encode()
+    closing_boundary = f"--{boundary}--\r\n".encode()
 
     return (
         b"".join((file_header, file_data, b"\r\n", biompin_part, service_tier_part, closing_boundary)),
