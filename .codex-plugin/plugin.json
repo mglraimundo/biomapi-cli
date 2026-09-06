@@ -1,6 +1,6 @@
 {
   "name": "biomapi-cli",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Biometry data extraction from optical biometry reports via biomapi.com.",
   "author": {
     "name": "mglraimundo",
@@ -12,8 +12,8 @@
   "keywords": ["biometry", "ophthalmology", "biompin", "escrs", "cli"],
   "skills": "./skills/",
   "interface": {
-    "displayName": "BiomAPI CLI",
-    "shortDescription": "Extract optical biometry reports and retrieve BiomPINs.",
+    "displayName": "BiomAPI",
+    "shortDescription": "Extract optical biometry",
     "longDescription": "Process optical biometry PDFs, images, and JSON files through BiomAPI, retrieve shared BiomPIN data, generate CSV exports, and create ESCRS IOL Calculator links.",
     "developerName": "mglraimundo",
     "category": "Productivity",
@@ -23,8 +23,10 @@
     "defaultPrompt": [
       "Process this biometry report with BiomAPI.",
       "Retrieve this BiomPIN with BiomAPI.",
-      "Generate a CSV from these BiomAPI results."
+      "Export these BiomAPI results as a spreadsheet."
     ],
-    "brandColor": "#8B5CF6"
+    "brandColor": "#8B5CF6",
+    "composerIcon": "./skills/biomapi/assets/icon.png",
+    "logo": "./skills/biomapi/assets/logo.png"
   }
 }

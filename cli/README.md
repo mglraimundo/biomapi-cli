@@ -29,13 +29,15 @@ chmod +x biomapi.py
 
 ### Quick setup (recommended, all platforms)
 
-Run the configure command to save your API keys to a config file:
+Keys are optional: public access includes 25 BiomAI credits per rolling 24 hours per IP, enough for 25 Standard PDF/image extractions. If you have an assigned BiomAPI quota or want to use your own Google quota, run this in your own terminal:
 
 ```
 python biomapi.py configure
 ```
 
-This prompts interactively. Prefer interactive configuration or environment variables so secrets do not appear in shell history. To set keys non-interactively in a controlled script:
+Key entry is hidden. Press Enter to keep a saved key or skip an optional key. The same settings work in Codex, Claude Code, and the standalone CLI under the same user account on the same machine, and survive plugin updates. Website and remote settings are separate.
+
+Prefer interactive configuration or environment variables so secrets do not appear in shell history. To set keys non-interactively in a controlled script:
 
 ```
 python biomapi.py configure --key biom_your_key_here
@@ -43,7 +45,7 @@ python biomapi.py configure --gemini-key AIza_your_key_here
 python biomapi.py configure --escrs-url https://iolcalculator.escrs.org
 ```
 
-View your current configuration:
+Check which keys are configured and their source without displaying their values:
 
 ```
 python biomapi.py configure --show

@@ -38,12 +38,14 @@ Config file (~/.config/biomapi/config):
 
 import base64
 import binascii
+import getpass
 import json
 import os
 import re
 import sys
 import tempfile
 import uuid
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from urllib.error import HTTPError, URLError
@@ -122,13 +124,6 @@ def _save_config(config: dict) -> str:
         except FileNotFoundError:
             pass
     return path
-
-
-def _mask_key(value: str) -> str:
-    """Mask a secret value for display: show first 10 chars + '...'."""
-    if len(value) <= 10:
-        return value
-    return value[:10] + "..."
 
 
 try:
@@ -525,10 +520,13 @@ def cmd_configure(args: list[str]) -> None:
         ]:
             env_val = os.environ.get(name)
             cfg_val = cfg.get(name)
+            is_key = name in {"BIOMAPI_KEY", "GEMINI_API_KEY"}
             if env_val:
-                print(f"  {name} = {_mask_key(env_val)} (from environment)", file=sys.stderr)
+                display = "(configured)" if is_key else env_val
+                print(f"  {name} = {display} (from environment)", file=sys.stderr)
             elif cfg_val:
-                print(f"  {name} = {_mask_key(cfg_val)} (from config file)", file=sys.stderr)
+                display = "(configured)" if is_key else cfg_val
+                print(f"  {name} = {display} (from config file)", file=sys.stderr)
             elif default:
                 print(f"  {name} = {default} (default)", file=sys.stderr)
             else:
@@ -595,22 +593,43 @@ def cmd_configure(args: list[str]) -> None:
         return
 
     # Interactive mode
-    print("BiomAPI CLI Configuration", file=sys.stderr)
+    if not sys.stdin.isatty():
+        print(json.dumps({
+            "error": True,
+            "detail": "Run configure in your own terminal to enter keys privately. "
+            "Use configure --show to check existing settings without revealing keys.",
+        }))
+        sys.exit(1)
+
+    print("BiomAPI key setup", file=sys.stderr)
     print(f"Config file: {path}", file=sys.stderr)
+    print("Keys are optional. Press Enter to keep a saved key or skip an empty one.", file=sys.stderr)
+    print("Input is hidden. These settings are shared by the CLI, Codex, and Claude Code", file=sys.stderr)
+    print("when running under this user account on this machine.", file=sys.stderr)
     print(file=sys.stderr)
 
     cfg = _load_config()
 
-    for name, label in [("BIOMAPI_KEY", "BIOMAPI_KEY"), ("GEMINI_API_KEY", "GEMINI_API_KEY")]:
+    for name, label in [
+        ("BIOMAPI_KEY", "BiomAPI key (higher service limits)"),
+        ("GEMINI_API_KEY", "Gemini key (use your own Google quota)"),
+    ]:
         current = cfg.get(name, "")
         if current:
-            prompt = f"  {label} [{_mask_key(current)}]: "
+            prompt = f"  {label} [saved]: "
         else:
-            prompt = f"  {label}: "
+            prompt = f"  {label} [optional]: "
+        if os.environ.get(name):
+            print(f"  {name} is set in the environment and overrides the saved key.", file=sys.stderr)
         try:
-            val = input(prompt).strip()
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", getpass.GetPassWarning)
+                val = getpass.getpass(prompt, stream=sys.stderr).strip()
+        except getpass.GetPassWarning:
+            print("\nHidden input is unavailable. Use a terminal that supports hidden input.", file=sys.stderr)
+            sys.exit(1)
         except (EOFError, KeyboardInterrupt):
-            print("\nCancelled.", file=sys.stderr)
+            print("\nCancelled. Saved settings were not changed.", file=sys.stderr)
             return
         if val:
             cfg[name] = val
@@ -758,12 +777,14 @@ Usage:
 
 Commands:
   configure    Save API keys to the config file (works on Windows, macOS, Linux).
-               Run with no flags for interactive setup, or use flags directly:
+               Run with no flags in your terminal for hidden key entry.
+               Press Enter to keep a saved key or skip an optional key.
+               Flags for controlled automation:
                  --key <key>         Set BIOMAPI_KEY
                  --gemini-key <key>  Set GEMINI_API_KEY
                  --url <url>         Set BIOMAPI_URL (for self-hosted instances)
                  --escrs-url <url>   Set ESCRS_IOL_CALCULATOR_URL
-                 --show              Display current configuration
+                 --show              Show configuration sources without key values
                  --clear             Remove the config file
                  --clear-key         Remove only BIOMAPI_KEY from config
                  --clear-gemini-key  Remove only GEMINI_API_KEY from config

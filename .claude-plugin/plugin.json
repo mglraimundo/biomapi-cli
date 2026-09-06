@@ -1,7 +1,11 @@
 {
   "name": "biomapi-cli",
+  "displayName": "BiomAPI",
   "description": "Biometry data extraction from optical biometry reports (PDF/images/JSON) via biomapi.com",
-  "version": "2.1.0",
+  "version": "2.1.1",
+  "homepage": "https://biomapi.com/docs/guides/ai-skill/",
+  "repository": "https://github.com/mglraimundo/biomapi-cli",
+  "license": "MIT",
   "author": {
     "name": "mglraimundo"
   }

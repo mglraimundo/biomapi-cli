@@ -3,9 +3,11 @@ name: biomapi
 description: Process optical biometry reports (PDF/images/JSON), retrieve BiomPIN results, export BiomAPI CSV files, check usage or service status, and create prefilled ESCRS IOL Calculator links through biomapi.com. Use when the user provides a biometry report, mentions a BiomPIN code (word-word-123456), asks to use BiomAPI, or wants an ESCRS IOL Calculator link from a report.
 ---
 
-# BiomAPI - AI Biometry Extraction
+# BiomAPI
 
 Extract structured biometry data from optical biometry device reports (PDF/images/JSON) using the BiomAPI service at `https://biomapi.com`.
+
+Introduce the skill as **BiomAPI**. The installation ID is `biomapi-cli`; the bundled CLI is an implementation detail. Start with the requested workflow, not key setup: public BiomAI access includes 25 credits per rolling 24 hours per IP (one credit per Standard PDF/image extraction). Check `usage` for the caller's actual allowance when needed. Keys are optional advanced configuration.
 
 ## Data Reference
 
@@ -53,21 +55,33 @@ Public access without a key uses the deployment-configured per-IP quotas. Standa
 | — | ✓ | `biomai_byok` bucket (your Gemini quota) | Public `retrieve` quota |
 | ✓ | ✓ | `biomai_byok` bucket (your Gemini quota) | Custom quota (per user) |
 
-### Helping Users Configure Keys
+### Advanced: optional key setup
 
-If a user reports a 429 rate limit error or asks how to get higher limits, help them set up keys:
+Do not prompt for keys during ordinary use. If the user asks for setup, first run `configure --show`. This reports whether keys are configured and their source without printing any part of a key. Do not read the config file or print environment variables. For a 429, check `usage` and explain when credits return; discuss keys only as an optional alternative when relevant to the limit.
 
 1. **BIOMAPI_KEY** — for higher daily limits: obtained from the BiomAPI operator.
 2. **GEMINI_API_KEY** — for BYOK processing in the separate `biomai_byok` bucket using the user's own Gemini API key from [aistudio.google.com](https://aistudio.google.com).
 
-Tell the user to run the interactive configuration locally. Do not run it with a secret supplied in chat:
+Resolve the installed script and an available Python 3.11+ interpreter, then give the user one copyable `configure` command with the real absolute paths, correctly quoted for their terminal. Never leave `<biomapi-script>` or a guessed plugin cache path in user-facing instructions. The user runs this command in their own terminal, where key entry is hidden. Do not start an interactive key prompt in an agent tool session, ask for a key in chat, or populate a command with a secret supplied in chat.
 
-```bash
-python3 <biomapi-script> configure
-python3 <biomapi-script> configure --show
-```
+Enter keeps an existing key or skips an optional key. Settings in `~/.config/biomapi/config` are shared by Codex, Claude Code, and the standalone CLI under the same user account on the same machine, and survive plugin updates. Website and remote settings are separate.
+
+After the user completes setup, run `configure --show`. Run `usage` too if they ask to verify service access or limits; do not upload a report just to test setup. Environment variables override saved settings, and the configuration check identifies that source. Saving a key does not validate it with the service.
 
 Keys can also be provided through environment variables. Command-line `--key` and `--gemini-key` flags remain available for controlled automation, but can be exposed through shell history or process listings.
+
+### Updating BiomAPI
+
+When the user explicitly asks to update BiomAPI, use the host's plugin manager. Do not check for updates on every extraction, silently update, or overwrite files in the installed plugin cache.
+
+For the GitHub marketplace installation documented by BiomAPI:
+
+- Codex: run `codex plugin marketplace upgrade biomapi`, then `codex plugin add biomapi-cli@biomapi` only if the refresh succeeded.
+- Claude Code: run `claude plugin marketplace update biomapi-plugins`, then `claude plugin update biomapi-cli@biomapi-plugins` only if the refresh succeeded. Preserve the installed scope; inspect `claude plugin list` and use the matching `--scope` when needed.
+
+First verify that the installed source matches `mglraimundo/biomapi-cli` and these marketplace names using the host's marketplace list command. For a different or local source, explain what is installed and use its update mechanism instead of adding or switching marketplaces. If the host CLI is unavailable, provide the manual steps from the [AI skill guide](https://biomapi.com/docs/guides/ai-skill/#update-biomapi).
+
+Report the command outcome accurately, including when no new version was available. After a successful update, ask the user to start a new Codex task or restart Claude Code so the refreshed skill is loaded. Saved keys remain separate from the plugin and do not need to be entered again.
 
 ## Commands
 
@@ -233,7 +247,7 @@ When the user asks for an **ESCRS IOL calculation** (or similar phrasing like "c
 ## Error Handling
 
 The script outputs JSON with `"error": true` on failure. Keep error messages brief:
-- **429**: Credit limit reached. Suggest Slow, `BIOMAPI_KEY`, or `GEMINI_API_KEY` as appropriate, and use the `usage` command to inspect the applicable quota.
+- **429**: Use `usage` to inspect the applicable quota and explain when credits return. Mention Slow if a half credit is available; keys are an optional advanced alternative when relevant.
 - **Connection failed**: Service may be temporarily unavailable.
 - **Unsupported file type**: Only `.pdf`, `.png`, `.jpg`, `.jpeg`, `.json` supported.
 - **File too large**: The server response reports the deployment's configured maximum.
